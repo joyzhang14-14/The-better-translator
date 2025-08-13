@@ -43,12 +43,14 @@ async def start_health_server():
     app.router.add_get('/health', health_check)
     
     # Railway provides PORT environment variable
-    port = int(os.environ.get('PORT', 8080))
+    # IMPORTANT: Railway requires the app to listen on the PORT env variable
+    port = int(os.environ.get('PORT', 3000))
     
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     
-    print(f"Health check server running on port {port}")
+    print(f"=== Health check server running on http://0.0.0.0:{port} ===")
+    print(f"=== Health endpoint: http://0.0.0.0:{port}/health ===")
     return runner

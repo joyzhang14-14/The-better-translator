@@ -42,11 +42,25 @@ def _load_json_or(path: str, fallback):
 
 config = _load_json_or(CONFIG_PATH, {})
 
-# Override sensitive keys with environment variables if they exist
-if os.environ.get('DISCORD_TOKEN'):
-    config['discord_token'] = os.environ.get('DISCORD_TOKEN')
-if os.environ.get('OPENAI_KEY'):
-    config['openai_key'] = os.environ.get('OPENAI_KEY')
+# 优先使用环境变量，回退到配置文件
+config["discord_token"] = os.getenv("DISCORD_TOKEN", config.get("discord_token", ""))
+config["openai_key"] = os.getenv("OPENAI_KEY", os.getenv("OPENAI_API_KEY", config.get("openai_key", "")))
+
+# 设置 OpenAI API key
+openai.api_key = config["openai_key"]
+
+# 启动时打一条掩码日志，确认进程里确实拿到了 key
+if config.get("openai_key"):
+    mask = config["openai_key"][:4] + "..." + config["openai_key"][-4:]
+    logger.info(f"OpenAI API Key loaded: {mask}")
+else:
+    logger.error("MISSING: OpenAI API Key not found!")
+
+if config.get("discord_token"):
+    mask_token = config["discord_token"][:10] + "..." + config["discord_token"][-10:]
+    logger.info(f"Discord Token loaded: {mask_token}")
+else:
+    logger.error("MISSING: Discord Token not found!")
 guild_dicts = _load_json_or(DICTIONARY_PATH, {})
 guild_abbrs = _load_json_or(ABBREV_PATH, {"default": {}})
 passthrough_cfg = _load_json_or(PASSTHROUGH_PATH, {"default": {"commands": [], "fillers": []}})
@@ -734,16 +748,14 @@ class TranslatorBot(commands.Bot):
                 continue
 
 def main():
-    discord_token = config.get("discord_token") or os.environ.get('DISCORD_TOKEN')
-    openai_key = config.get("openai_key") or os.environ.get('OPENAI_KEY')
-    
-    if not discord_token:
+    # 环境变量已经在文件开头处理，这里只需要验证
+    if not config.get("discord_token"):
         raise RuntimeError("Discord Bot Token not found. Set DISCORD_TOKEN environment variable or add to config.json")
-    if not openai_key:
+    if not config.get("openai_key"):
         raise RuntimeError("OpenAI API Key not found. Set OPENAI_KEY environment variable or add to config.json")
     
-    config["discord_token"] = discord_token
-    config["openai_key"] = openai_key
+    logger.info("Starting Discord Translator Bot...")
+    logger.info(f"Bot will run on {len(config.get('guilds', {}))} configured guilds")
     bot = TranslatorBot()
     prompt_mod.register_commands(
         bot=bot,
