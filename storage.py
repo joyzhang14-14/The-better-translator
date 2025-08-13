@@ -16,6 +16,7 @@ class PersistentStorage:
         self.storage_type = os.environ.get('STORAGE_TYPE', 'file')  # 'file' or 'url'
         self.storage_url = os.environ.get('STORAGE_URL', '')  # For URL-based storage
         self.storage_token = os.environ.get('STORAGE_TOKEN', '')  # Authentication token
+        self.bin_id = os.environ.get('JSONBIN_ID', '689c188a43b1c97be91d1685')  # JSONBin ID
         
     async def load_json(self, key: str, fallback: Dict[str, Any] = None) -> Dict[str, Any]:
         """Load JSON data from persistent storage"""
@@ -60,32 +61,15 @@ class PersistentStorage:
     async def _load_from_url(self, key: str, fallback: Dict[str, Any]) -> Dict[str, Any]:
         """Load from URL-based storage (JSONBin)"""
         try:
-            # For JSONBin, we need to create bins with specific IDs
-            bin_id = f"bot-{key}"
-            url = f"{self.storage_url}/{bin_id}/latest"
-            headers = {
-                'X-Master-Key': self.storage_token
-            }
+            # Load all data from the bin and extract the specific key
+            all_data = await self._load_existing_bin()
             
-            logger.info(f"Attempting to load {key} from JSONBin at {url}")
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
-                    response_text = await response.text()
-                    logger.info(f"JSONBin load response: HTTP {response.status} - {response_text[:200]}")
-                    
-                    if response.status == 200:
-                        response_data = await response.json()
-                        # JSONBin wraps data in 'record' field
-                        data = response_data.get('record', response_data)
-                        logger.info(f"Loaded {key} from JSONBin successfully")
-                        return data
-                    elif response.status == 404:
-                        logger.info(f"Storage key {key} not found in JSONBin, using fallback")
-                        return fallback
-                    else:
-                        logger.error(f"Failed to load {key}: HTTP {response.status} - {response_text}")
-                        return fallback
+            if key in all_data:
+                logger.info(f"Loaded {key} from JSONBin successfully")
+                return all_data[key]
+            else:
+                logger.info(f"Storage key {key} not found in JSONBin, using fallback")
+                return fallback
         except Exception as e:
             logger.error(f"Failed to load {key} from URL: {e}")
             return fallback
@@ -93,21 +77,25 @@ class PersistentStorage:
     async def _save_to_url(self, key: str, data: Dict[str, Any]) -> bool:
         """Save to URL-based storage (JSONBin)"""
         try:
-            # First try to create a new bin with POST
-            url = f"{self.storage_url}"
+            # First load existing data from the bin
+            existing_data = await self._load_existing_bin()
+            
+            # Update the specific key in the existing data
+            existing_data[key] = data
+            
+            # Save the combined data back to the bin
+            url = f"{self.storage_url}/{self.bin_id}"
             headers = {
                 'Content-Type': 'application/json',
-                'X-Master-Key': self.storage_token,
-                'X-Bin-Name': f"discord-bot-{key}",
-                'X-Bin-Private': 'false'
+                'X-Master-Key': self.storage_token
             }
             
             logger.info(f"Attempting to save {key} to JSONBin at {url}")
             logger.info(f"Using master key: {self.storage_token[:10]}...")
             
             async with aiohttp.ClientSession() as session:
-                # Try POST first (create new bin)
-                async with session.post(url, json=data, headers=headers) as response:
+                # Use PUT to update existing bin
+                async with session.put(url, json=existing_data, headers=headers) as response:
                     response_text = await response.text()
                     logger.info(f"JSONBin response: HTTP {response.status} - {response_text[:200]}")
                     
@@ -120,6 +108,24 @@ class PersistentStorage:
         except Exception as e:
             logger.error(f"Failed to save {key} to URL: {e}")
             return False
+
+    async def _load_existing_bin(self) -> Dict[str, Any]:
+        """Load all existing data from the JSONBin"""
+        try:
+            url = f"{self.storage_url}/{self.bin_id}/latest"
+            headers = {
+                'X-Master-Key': self.storage_token
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        response_data = await response.json()
+                        return response_data.get('record', response_data)
+                    else:
+                        return {}
+        except Exception:
+            return {}
 
 # Global storage instance
 storage = PersistentStorage()
