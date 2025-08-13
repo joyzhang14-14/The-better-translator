@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from preprocess import preprocess, FSURE_HEAD, FSURE_SEP
 import joy_cmds as prompt_mod
 import health_server
+from storage import storage
 
 # Load environment variables from .env file
 load_dotenv()
@@ -61,9 +62,10 @@ if config.get("discord_token"):
     logger.info(f"Discord Token loaded: {mask_token}")
 else:
     logger.error("MISSING: Discord Token not found!")
-guild_dicts = _load_json_or(DICTIONARY_PATH, {})
-guild_abbrs = _load_json_or(ABBREV_PATH, {"default": {}})
-passthrough_cfg = _load_json_or(PASSTHROUGH_PATH, {"default": {"commands": [], "fillers": []}})
+# These will be loaded asynchronously in setup_hook
+guild_dicts = {}
+guild_abbrs = {"default": {}}
+passthrough_cfg = {"default": {"commands": [], "fillers": []}}
 
 REPLY_ICON_DEFAULT = config.get("reply_icon", "↪")
 REPLY_LABEL_EN = "REPLY"
@@ -266,6 +268,16 @@ class TranslatorBot(commands.Bot):
             g.pop(k, None)
 
     async def setup_hook(self):
+        global guild_dicts, guild_abbrs, passthrough_cfg
+        
+        # Load persistent data
+        logger.info("Loading persistent data...")
+        guild_dicts.update(await storage.load_json("dictionary", {}))
+        guild_abbrs.update(await storage.load_json("abbreviations", {"default": {}}))
+        passthrough_cfg.update(await storage.load_json("passthrough", {"default": {"commands": [], "fillers": []}}))
+        
+        logger.info(f"Loaded {len(guild_dicts)} guilds in dictionary")
+        
         self._mirror_load()
         self.session = aiohttp.ClientSession()
         # Start health check server

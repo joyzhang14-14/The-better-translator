@@ -1,6 +1,7 @@
 import os
 import json
 from discord.ext import commands
+from storage import storage
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 PASSTHROUGH_PATH = os.path.join(os.path.dirname(__file__), "passthrough.json")
@@ -52,8 +53,12 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         if zh in d:
             return await ctx.reply("❗已存在 already exist", mention_author=False)
         d[zh] = en
-        _save_json(dictionary_path, guild_dicts)
-        await ctx.reply("✅已添加 added", mention_author=False)
+        # Save to persistent storage
+        success = await storage.save_json("dictionary", guild_dicts)
+        if success:
+            await ctx.reply("✅已添加 added", mention_author=False)
+        else:
+            await ctx.reply("⚠️已添加但保存失败 added but save failed", mention_author=False)
 
     @bot.command(name="delprompt")
     async def delprompt(ctx, zh: str):
@@ -63,8 +68,12 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         d = guild_dicts.get(gid, {})
         if zh in d:
             d.pop(zh)
-            _save_json(dictionary_path, guild_dicts)
-            return await ctx.reply("✅已删除 deleted", mention_author=False)
+            # Save to persistent storage
+            success = await storage.save_json("dictionary", guild_dicts)
+            if success:
+                return await ctx.reply("✅已删除 deleted", mention_author=False)
+            else:
+                return await ctx.reply("⚠️已删除但保存失败 deleted but save failed", mention_author=False)
         await ctx.reply("❌未找到 cannot find", mention_author=False)
 
     @bot.command(name="listprompts")
