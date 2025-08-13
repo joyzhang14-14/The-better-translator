@@ -743,6 +743,9 @@ class TranslatorBot(commands.Bot):
             return
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
+        # Apply preprocessing first (handles 6/666 -> 厉害 conversion)
+        from preprocess import preprocess
+        raw = preprocess(raw, "zh_to_en")  # Always use zh_to_en for praise number conversion
         raw = self._text_after_abbrev_pre(raw, gid)
         if await self.is_pass_through(msg):
             if is_en:

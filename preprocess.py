@@ -71,12 +71,16 @@ def _encode_bao_de(s: str) -> str:
 
 def preprocess(text: str, direction: str) -> str:
     s = text or ""
-    if direction != "zh_to_en":
-        return s
+    
+    # Handle praise numbers for both directions 
+    # (6/666 should become 厉害 regardless of source channel)
     s = _convert_praise_numbers(s)
-    s = _rewrite_learned_from(s)
-    s = _encode_bao_de(s)
-    if not s.startswith(FSURE_HEAD):
-        s = _inject_comma_after_le(s)
-        s = _which_choose_disamb(s)
+    
+    # Only apply Chinese-specific preprocessing for zh_to_en direction
+    if direction == "zh_to_en":
+        s = _rewrite_learned_from(s)
+        s = _encode_bao_de(s)
+        if not s.startswith(FSURE_HEAD):
+            s = _inject_comma_after_le(s)
+            s = _which_choose_disamb(s)
     return s
