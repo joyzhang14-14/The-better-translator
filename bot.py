@@ -743,7 +743,6 @@ class TranslatorBot(commands.Bot):
             return
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
-        original_raw = raw  # Store original text for language detection
         raw = self._text_after_abbrev_pre(raw, gid)
         if await self.is_pass_through(msg):
             if is_en:
@@ -754,11 +753,8 @@ class TranslatorBot(commands.Bot):
         patched = await self._process_star_patch_if_any(msg)
         if patched is not None:
             raw = patched
-            original_raw = patched  # Update original if star patch applied
         txt = strip_banner(raw)
-        # Use original text for language detection to avoid abbreviation expansion affecting detection
-        original_txt = strip_banner(original_raw)
-        lang = await self.detect_language(original_txt)
+        lang = await self.detect_language(txt)
         async def to_target(text: str, direction: str) -> str:
             tr = await self.translate_text(text, direction, cm)
             if tr == "/":

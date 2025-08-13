@@ -47,6 +47,13 @@ def _which_choose_disamb(s: str) -> str:
         return f"{m.group(1)}{m.group(2)}就{m.group(3)}{m.group(4)}"
     return _PAT_WHICH_CHOOSE.sub(fix, s)
 
+def _convert_praise_numbers(s: str) -> str:
+    """Convert standalone 6 or 666 to 厉害 (awesome)"""
+    s = s.strip()
+    if s == "6" or s == "666":
+        return "厉害"
+    return s
+
 def _encode_bao_de(s: str) -> str:
     m = _PAT_BAO_DE_SENT.match(s.strip())
     if not m:
@@ -66,6 +73,7 @@ def preprocess(text: str, direction: str) -> str:
     s = text or ""
     if direction != "zh_to_en":
         return s
+    s = _convert_praise_numbers(s)
     s = _rewrite_learned_from(s)
     s = _encode_bao_de(s)
     if not s.startswith(FSURE_HEAD):
