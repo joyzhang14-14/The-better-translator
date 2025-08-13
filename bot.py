@@ -525,10 +525,12 @@ class TranslatorBot(commands.Bot):
             return prev_text
 
     async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
+        logger.info(f"DEBUG: _call_translate: '{src_text}' from {src_lang} to {tgt_lang}")
         if not src_text:
+            logger.info("DEBUG: Empty src_text, returning /")
             return "/"
         if tgt_lang.startswith("Chinese"):
-            sys = "你是一个严格的翻译引擎。只输出译文本身，不要解释、不要引号、不要添加多余词语。如果确实无法翻译，请只输出一个斜杠“/”。"
+            sys = "你是一个严格的翻译引擎。只输出译文本身，不要解释、不要引号、不要添加多余词语。如果确实无法翻译，请只输出一个斜杠"/"。"
         else:
             sys = "You are a strict translation engine. Output only the translated text with no quotes or extra words. If translation is impossible, output exactly a single slash (/)."
         usr = f"Source language: {src_lang}\nTarget language: {tgt_lang}\nText between <text> tags:\n<text>{src_text}</text>"
@@ -536,20 +538,24 @@ class TranslatorBot(commands.Bot):
             if not self.openai_client:
                 logger.error("OpenAI client not initialized - translation failed")
                 return "/"
+            logger.info(f"DEBUG: Calling OpenAI API...")
             r = await self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 temperature=0.2
             )
             out = (r.choices[0].message.content or "").strip()
+            logger.info(f"DEBUG: OpenAI returned: '{out}'")
             return out or "/"
         except Exception as e:
             logger.error(f"OpenAI translation failed: {e}")
             return "/"
 
     async def translate_text(self, text: str, direction: str, custom_map: dict) -> str:
+        logger.info(f"DEBUG: translate_text called with '{text}', direction='{direction}'")
         if direction == "zh_to_en":
             pre = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
+            logger.info(f"DEBUG: After dictionary+preprocess: '{pre}'")
             if pre.startswith(FSURE_HEAD):
                 payload = pre[len(FSURE_HEAD):]
                 if FSURE_SEP in payload:
@@ -564,10 +570,14 @@ class TranslatorBot(commands.Bot):
                     if en_tail and en_tail != "/":
                         out = out + ", " + en_tail
                 return out or "/"
-            return await self._call_translate(pre, "Chinese", "English")
+            result = await self._call_translate(pre, "Chinese", "English")
+            logger.info(f"DEBUG: Translation result: '{result}'")
+            return result
         else:
             pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
-            return await self._call_translate(pre, "English", "Chinese (Simplified)")
+            result = await self._call_translate(pre, "English", "Chinese (Simplified)")
+            logger.info(f"DEBUG: Translation result: '{result}'")
+            return result
 
     def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
         return _apply_abbreviations(s or "", gid)
