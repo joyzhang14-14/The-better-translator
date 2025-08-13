@@ -1,0 +1,26 @@
+{
+  "guilds": {
+    "1358279435350048961": {
+      "zh_channel_id": 1398026396495904859,
+      "en_channel_id": 1398026422424965222,
+      "zh_webhook_url": "https://discord.com/api/webhooks/1398049277774790746/843B-mSqjX7xICQdTZwpk5YawWNC1K9efQDy7TMEb6IuKstBeIeX7w1MUE4qDCKjDAQi",
+      "en_webhook_url": "https://discord.com/api/webhooks/1398050541526978610/CEaQfcDKEzKhPaS8YzkByHWzAT2v58Z-w8Nz-zwoO0_Fi65HAzjV2ZdHytL0rhMzbxah",
+      "admin": {
+        "allowed_user_ids": [1073555366803165245],
+        "allowed_role_ids": [],
+        "require_manage_guild": false
+      }
+    },
+    "1308295235817705553": {
+      "zh_channel_id": 1308295236371349627,
+      "en_channel_id": 1400602657646710794,
+      "zh_webhook_url": "https://discord.com/api/webhooks/1400653604674732062/T7VkMuSRgwfEXvwVclrBVfI2Ep6HrF1BvtEsXLzMFk93NKRivUlnOe4ZhHwzcAi8OrsV",
+      "en_webhook_url": "https://discord.com/api/webhooks/1400603145989525614/1JvF-lOWUz6-fABsNLhzmpLfMCkdoxX9580HhSM-ei1vwaifz5ul5ztZrXleDzs0TLxc",
+      "admin": {
+        "allowed_user_ids": [1073555366803165245,1052726568130199552],
+        "allowed_role_ids": [],
+        "require_manage_guild": false
+      }
+    }
+  }
+}

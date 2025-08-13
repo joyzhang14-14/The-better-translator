@@ -1,0 +1,53 @@
+{
+  "default": {
+    "commands": [
+      "!addprompt",
+      "!delprompt",
+      "!listprompts",
+      "!addabbr",
+      "!delabbr",
+      "!listabbr",
+      "!setrequire",
+      "!allowuser",
+      "!denyuser",
+      "!allowrole",
+      "!denyrole"
+    ],
+    "passthrough_regex": [
+      "^<\\s*https?://[^ >]+\\s*>$",
+      "^(?i)(?:https?://|www\\.)\\S+$"
+    ],
+    "numbers_passthrough": true,
+    "numeric_exceptions": [],
+    "interjections": [
+      "em",
+      "emm",
+      "emmm",
+      "hmm",
+      "hmmm",
+      "umm",
+      "uh",
+      "ugh",
+      "eh",
+      "ah",
+      "oh",
+      "...",
+      "……",
+      "嗯",
+      "嗯嗯",
+      "呃",
+      "额",
+      "唔",
+      "啊",
+      "哦",
+      "欸",
+      "诶",
+      "哎",
+      "嘿",
+      "哈",
+      "呵呵",
+      "哈哈",
+      "嘿嘿"
+    ]
+  }
+}
