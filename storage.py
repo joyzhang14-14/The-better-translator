@@ -67,8 +67,13 @@ class PersistentStorage:
                 'X-Master-Key': self.storage_token
             }
             
+            logger.info(f"Attempting to load {key} from JSONBin at {url}")
+            
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
+                    response_text = await response.text()
+                    logger.info(f"JSONBin load response: HTTP {response.status} - {response_text[:200]}")
+                    
                     if response.status == 200:
                         response_data = await response.json()
                         # JSONBin wraps data in 'record' field
@@ -79,7 +84,7 @@ class PersistentStorage:
                         logger.info(f"Storage key {key} not found in JSONBin, using fallback")
                         return fallback
                     else:
-                        logger.error(f"Failed to load {key}: HTTP {response.status}")
+                        logger.error(f"Failed to load {key}: HTTP {response.status} - {response_text}")
                         return fallback
         except Exception as e:
             logger.error(f"Failed to load {key} from URL: {e}")
@@ -88,22 +93,28 @@ class PersistentStorage:
     async def _save_to_url(self, key: str, data: Dict[str, Any]) -> bool:
         """Save to URL-based storage (JSONBin)"""
         try:
-            bin_id = f"bot-{key}"
-            url = f"{self.storage_url}/{bin_id}"
+            # First try to create a new bin with POST
+            url = f"{self.storage_url}"
             headers = {
                 'Content-Type': 'application/json',
                 'X-Master-Key': self.storage_token,
-                'X-Bin-Name': f"Discord Bot - {key}",
+                'X-Bin-Name': f"discord-bot-{key}",
                 'X-Bin-Private': 'false'
             }
             
+            logger.info(f"Attempting to save {key} to JSONBin at {url}")
+            logger.info(f"Using master key: {self.storage_token[:10]}...")
+            
             async with aiohttp.ClientSession() as session:
-                async with session.put(url, json=data, headers=headers) as response:
+                # Try POST first (create new bin)
+                async with session.post(url, json=data, headers=headers) as response:
+                    response_text = await response.text()
+                    logger.info(f"JSONBin response: HTTP {response.status} - {response_text[:200]}")
+                    
                     if response.status in [200, 201]:
                         logger.info(f"Successfully saved {key} to JSONBin")
                         return True
                     else:
-                        response_text = await response.text()
                         logger.error(f"Failed to save {key}: HTTP {response.status} - {response_text}")
                         return False
         except Exception as e:
