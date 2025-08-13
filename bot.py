@@ -275,6 +275,11 @@ class TranslatorBot(commands.Bot):
         guild_dicts.update(await storage.load_json("dictionary", {}))
         
         # Load abbreviations from local file first (for defaults), then merge with cloud data
+        logger.info(f"Attempting to load abbreviations from: {ABBREV_PATH}")
+        logger.info(f"File exists: {os.path.exists(ABBREV_PATH)}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        logger.info(f"BASE directory: {BASE}")
+        
         local_abbrs = _load_json_or(ABBREV_PATH, {"default": {}})
         cloud_abbrs = await storage.load_json("abbreviations", {})
         
