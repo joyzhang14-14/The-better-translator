@@ -778,6 +778,50 @@ class TranslatorBot(commands.Bot):
         except Exception:
             logger.exception("Webhook send failed")
 
+    async def _process_star_patch_if_any_with_content(self, content: str, msg: discord.Message) -> Optional[str]:
+        """Process star patch using provided content instead of msg.content"""
+        t = content.strip()
+        
+        # Check if it's a potential star patch: ends with * and no newlines
+        if len(t) >= 2 and t.endswith("*") and "\n" not in t:
+            # Avoid treating markdown formatting as patches
+            # Skip if it looks like *italic*, **bold**, ***bold-italic***
+            if t.startswith("*") or t.startswith("**") or t.startswith("***"):
+                logger.info(f"DEBUG: Skipping markdown format: '{t}'")
+                return None
+                
+            # Skip if it contains balanced markdown (e.g., "text *word* more*")  
+            # Count * occurrences - if even number, likely markdown pairs
+            star_count = t.count("*")
+            if star_count > 1 and star_count % 2 == 0:
+                # Check if there are matching * pairs before the final *
+                inner_text = t[:-1]  # Remove the final *
+                if "*" in inner_text:
+                    logger.info(f"DEBUG: Skipping potential markdown pairs: '{t}'")
+                    return None
+            
+            logger.info(f"DEBUG: Processing star patch: '{t}'")
+            ref = await self._get_ref_message(msg)
+            base = None
+            if ref and ref.author.id == msg.author.id:
+                base = ref.content or ""
+            else:
+                last_id = self._recent_user_message.get(msg.author.id)
+                if last_id:
+                    try:
+                        base_msg = await msg.channel.fetch_message(last_id)
+                        if base_msg and base_msg.author.id == msg.author.id:
+                            base = base_msg.content or ""
+                    except Exception:
+                        base = None
+            if base:
+                patch_text = t[:-1]  # Remove the trailing *
+                logger.info(f"DEBUG: Applying patch '{patch_text}' to base '{base}'")
+                fixed = await self._apply_star_patch(strip_banner(base), patch_text)
+                logger.info(f"DEBUG: Patch result: '{fixed}'")
+                return fixed
+        return None
+
     async def _process_star_patch_if_any(self, msg: discord.Message) -> Optional[str]:
         t = (msg.content or "").strip()
         
@@ -856,9 +900,15 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw, msg, lang="English")
             return
         logger.info(f"DEBUG: Message '{raw}' will go through translation")
-        patched = await self._process_star_patch_if_any(msg)
+        # Check for star patch using original message content (before preprocessing)
+        original_content = msg.content or ""
+        patched = await self._process_star_patch_if_any_with_content(original_content, msg)
         if patched is not None:
-            raw = patched
+            logger.info(f"DEBUG: Star patch applied, using patched content: '{patched}'")
+            # Apply preprocessing and abbreviations to the patched result
+            raw = preprocess(patched, "zh_to_en")
+            raw = self._text_after_abbrev_pre(raw, gid)
+            logger.info(f"DEBUG: Patched content after processing: '{raw}'")
         txt = strip_banner(raw)
         lang = await self.detect_language(txt)
         logger.info(f"DEBUG: Detected language: '{lang}' for text: '{txt}'")
