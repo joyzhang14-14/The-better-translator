@@ -272,7 +272,9 @@ class TranslatorBot(commands.Bot):
         
         # Load persistent data
         logger.info("Loading persistent data...")
-        guild_dicts.update(await storage.load_json("dictionary", {}))
+        # Temporarily disable cloud storage due to HTTP 400 errors
+        # guild_dicts.update(await storage.load_json("dictionary", {}))
+        logger.info("Cloud storage disabled due to HTTP 400 errors")
         
         # Hardcoded default abbreviations as fallback
         hardcoded_defaults = {
@@ -301,7 +303,9 @@ class TranslatorBot(commands.Bot):
         logger.info(f"BASE directory: {BASE}")
         
         local_abbrs = _load_json_or(ABBREV_PATH, hardcoded_defaults)
-        cloud_abbrs = await storage.load_json("abbreviations", {})
+        # Temporarily disable cloud storage due to HTTP 400 errors
+        # cloud_abbrs = await storage.load_json("abbreviations", {})
+        cloud_abbrs = {}
         
         # Debug logging
         logger.info(f"Local abbreviations loaded: {len(local_abbrs)} groups")
