@@ -11,7 +11,7 @@ from collections import deque
 import aiohttp
 import discord
 from discord.ext import commands, tasks
-import openai
+from openai import AsyncOpenAI
 from PIL import Image
 import pytesseract
 from dotenv import load_dotenv
@@ -46,8 +46,8 @@ config = _load_json_or(CONFIG_PATH, {})
 config["discord_token"] = os.getenv("DISCORD_TOKEN", config.get("discord_token", ""))
 config["openai_key"] = os.getenv("OPENAI_KEY", os.getenv("OPENAI_API_KEY", config.get("openai_key", "")))
 
-# 设置 OpenAI API key
-openai.api_key = config["openai_key"]
+# 初始化 OpenAI 客户端
+openai_client = AsyncOpenAI(api_key=config["openai_key"]) if config.get("openai_key") else None
 
 # 启动时打一条掩码日志，确认进程里确实拿到了 key
 if config.get("openai_key"):
@@ -226,7 +226,7 @@ class TranslatorBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix="!", intents=intents)
-        openai.api_key = config.get("openai_key", os.environ.get('OPENAI_KEY', ""))
+        self.openai_client = openai_client
         self.session: Optional[aiohttp.ClientSession] = None
         self.no_ping = discord.AllowedMentions(everyone=False, users=False, roles=False, replied_user=False)
         self.mirror_map: Dict[int, Dict[int, Dict[int, int]]] = {}
@@ -388,17 +388,21 @@ class TranslatorBot(commands.Bot):
             "Otherwise OK."
         )
         try:
-            r = await openai.ChatCompletion.acreate(
+            if not self.openai_client:
+                return "OK"
+            r = await self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role":"system","content":sys},{"role":"user","content":text}],
-                max_tokens=2, temperature=0.0
+                max_tokens=2, 
+                temperature=0.0
             )
             ans = (r.choices[0].message.content or "").strip().upper()
             if "SWEAR" in ans:
                 return "SWEAR"
             if "ILLEGAL" in ans:
                 return "ILLEGAL"
-        except Exception:
+        except Exception as e:
+            logger.error(f"OpenAI policy check failed: {e}")
             pass
         return "OK"
 
@@ -407,15 +411,20 @@ class TranslatorBot(commands.Bot):
         if not t:
             return False
         try:
-            mr = await openai.Moderation.acreate(model="text-moderation-latest", input=t)
-            if mr and mr["results"]:
-                return bool(mr["results"][0].get("flagged", False))
-        except Exception:
+            if not self.openai_client:
+                return False
+            mr = await self.openai_client.moderations.create(model="text-moderation-latest", input=t)
+            if mr and mr.results:
+                return bool(mr.results[0].flagged)
+        except Exception as e:
+            logger.error(f"OpenAI moderation failed: {e}")
             pass
         try:
+            if not self.openai_client:
+                return False
             sys = "Classify if the text contains profanity or swear words. Reply with exactly one token: PROFANE or CLEAN."
             usr = f"<text>{t}</text>"
-            r = await openai.ChatCompletion.acreate(
+            r = await self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 max_tokens=1, temperature=0.0
@@ -440,13 +449,16 @@ class TranslatorBot(commands.Bot):
             )
             usr = f"ORIGINAL:\n{prev_text}\nPATCH:\n{patch}"
         try:
-            r = await openai.ChatCompletion.acreate(
+            if not self.openai_client:
+                return prev_text
+            r = await self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 temperature=0.0
             )
             return (r.choices[0].message.content or "").strip() or prev_text
-        except Exception:
+        except Exception as e:
+            logger.error(f"OpenAI star patch failed: {e}")
             return prev_text
 
     async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
@@ -458,14 +470,18 @@ class TranslatorBot(commands.Bot):
             sys = "You are a strict translation engine. Output only the translated text with no quotes or extra words. If translation is impossible, output exactly a single slash (/)."
         usr = f"Source language: {src_lang}\nTarget language: {tgt_lang}\nText between <text> tags:\n<text>{src_text}</text>"
         try:
-            r = await openai.ChatCompletion.acreate(
+            if not self.openai_client:
+                logger.error("OpenAI client not initialized - translation failed")
+                return "/"
+            r = await self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 temperature=0.2
             )
             out = (r.choices[0].message.content or "").strip()
             return out or "/"
-        except Exception:
+        except Exception as e:
+            logger.error(f"OpenAI translation failed: {e}")
             return "/"
 
     async def translate_text(self, text: str, direction: str, custom_map: dict) -> str:

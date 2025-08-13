@@ -1,5 +1,5 @@
 discord.py>=2.5.1
-openai>=0.28.1
+openai>=1.0.0
 aiohttp>=3.8.1
 pillow>=9.5.0
 pytesseract>=0.3.10
