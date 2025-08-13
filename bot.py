@@ -743,7 +743,6 @@ class TranslatorBot(commands.Bot):
             return
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
-        original_raw = raw  # Store original for language detection
         # Apply preprocessing first (handles 6/666 -> 厉害 conversion)
         from preprocess import preprocess
         raw = preprocess(raw, "zh_to_en")  # Always use zh_to_en for praise number conversion
@@ -757,11 +756,8 @@ class TranslatorBot(commands.Bot):
         patched = await self._process_star_patch_if_any(msg)
         if patched is not None:
             raw = patched
-            # Don't update original_raw for star patches, keep original for language detection
         txt = strip_banner(raw)
-        # Use original text for language detection (before preprocessing)
-        original_txt = strip_banner(original_raw)
-        lang = await self.detect_language(original_txt)
+        lang = await self.detect_language(txt)
         async def to_target(text: str, direction: str) -> str:
             tr = await self.translate_text(text, direction, cm)
             if tr == "/":
