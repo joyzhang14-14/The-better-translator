@@ -274,17 +274,35 @@ class TranslatorBot(commands.Bot):
         logger.info("Loading persistent data...")
         guild_dicts.update(await storage.load_json("dictionary", {}))
         
-        # Load abbreviations but ensure default exists
-        loaded_abbrs = await storage.load_json("abbreviations", {})
-        if "default" not in loaded_abbrs:
-            loaded_abbrs["default"] = {}
-        guild_abbrs.update(loaded_abbrs)
+        # Load abbreviations from local file first (for defaults), then merge with cloud data
+        local_abbrs = _load_json_or(ABBREV_PATH, {"default": {}})
+        cloud_abbrs = await storage.load_json("abbreviations", {})
+        
+        # Debug logging
+        logger.info(f"Local abbreviations loaded: {len(local_abbrs)} groups")
+        logger.info(f"Local default abbreviations: {len(local_abbrs.get('default', {}))}")
+        logger.info(f"Cloud abbreviations loaded: {len(cloud_abbrs)} groups")
+        
+        # Merge: start with local defaults, then add cloud data
+        guild_abbrs.clear()
+        guild_abbrs.update(local_abbrs)
+        
+        # Merge cloud data into local data (cloud data for specific guilds can override)
+        for guild_id, abbr_data in cloud_abbrs.items():
+            if guild_id == "default":
+                # For default, merge instead of replace to keep local defaults
+                guild_abbrs["default"].update(abbr_data)
+            else:
+                # For guild-specific data, use cloud version
+                guild_abbrs[guild_id] = abbr_data
         
         # Load passthrough from local file only (not from cloud storage)
         passthrough_cfg.update(_load_json_or(PASSTHROUGH_PATH, {"default": {"commands": [], "fillers": []}}))
         
         logger.info(f"Loaded {len(guild_dicts)} guilds in dictionary")
-        logger.info(f"Loaded {len(guild_abbrs)} abbreviation groups (including default)")
+        default_abbr_count = len(guild_abbrs.get("default", {}))
+        logger.info(f"Final result: {len(guild_abbrs)} abbreviation groups with {default_abbr_count} default abbreviations")
+        logger.info(f"Default abbreviations sample: {list(guild_abbrs.get('default', {}).keys())[:10]}")
         
         self._mirror_load()
         self.session = aiohttp.ClientSession()

@@ -123,15 +123,37 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
     @bot.command(name="listabbr")
     async def listabbr(ctx):
         gid = str(ctx.guild.id)
-        d = guild_abbrs.get(gid, {})
-        if not d:
-            base = guild_abbrs.get("default", {})
-            if base:
-                lines = "\n".join(f"{k} → {v}" for k, v in base.items())
-                return await ctx.reply("当前无专属缩写，显示默认:\nNo special abbreviation, show default:\n" + lines, mention_author=False)
-            return await ctx.reply("缩写表为空 abbreviation list empty", mention_author=False)
-        lines = "\n".join(f"{k} → {v}" for k, v in d.items())
-        await ctx.reply(lines, mention_author=False)
+        guild_specific = guild_abbrs.get(gid, {})
+        default_abbrs = guild_abbrs.get("default", {})
+        
+        # Debug logging
+        print(f"DEBUG listabbr - guild_abbrs keys: {list(guild_abbrs.keys())}")
+        print(f"DEBUG listabbr - default_abbrs count: {len(default_abbrs)}")
+        print(f"DEBUG listabbr - guild_specific count: {len(guild_specific)}")
+        print(f"DEBUG listabbr - default sample: {list(default_abbrs.keys())[:5]}")
+        
+        lines = []
+        
+        if default_abbrs:
+            lines.append("🌐 **默认缩写 Default Abbreviations:**")
+            default_lines = [f"`{k}` → {v}" for k, v in sorted(default_abbrs.items())]
+            lines.extend(default_lines[:20])  # Show first 20 to avoid message length limits
+            if len(default_abbrs) > 20:
+                lines.append(f"... 还有 {len(default_abbrs) - 20} 个 (and {len(default_abbrs) - 20} more)")
+        
+        if guild_specific:
+            lines.append(f"\n🏠 **群组专属 Guild Specific ({ctx.guild.name}):**")
+            guild_lines = [f"`{k}` → {v}" for k, v in sorted(guild_specific.items())]
+            lines.extend(guild_lines)
+        
+        if not lines:
+            return await ctx.reply("缩写表为空 Abbreviation list empty", mention_author=False)
+        
+        result = "\n".join(lines)
+        if len(result) > 1900:  # Discord message limit
+            result = result[:1900] + "...\n(消息过长已截断 Message truncated)"
+        
+        await ctx.reply(result, mention_author=False)
 
     @bot.command(name="setrequire")
     async def setrequire(ctx, mode: str):
