@@ -273,10 +273,18 @@ class TranslatorBot(commands.Bot):
         # Load persistent data
         logger.info("Loading persistent data...")
         guild_dicts.update(await storage.load_json("dictionary", {}))
-        guild_abbrs.update(await storage.load_json("abbreviations", {"default": {}}))
-        passthrough_cfg.update(await storage.load_json("passthrough", {"default": {"commands": [], "fillers": []}}))
+        
+        # Load abbreviations but ensure default exists
+        loaded_abbrs = await storage.load_json("abbreviations", {})
+        if "default" not in loaded_abbrs:
+            loaded_abbrs["default"] = {}
+        guild_abbrs.update(loaded_abbrs)
+        
+        # Load passthrough from local file only (not from cloud storage)
+        passthrough_cfg.update(_load_json_or(PASSTHROUGH_PATH, {"default": {"commands": [], "fillers": []}}))
         
         logger.info(f"Loaded {len(guild_dicts)} guilds in dictionary")
+        logger.info(f"Loaded {len(guild_abbrs)} abbreviation groups (including default)")
         
         self._mirror_load()
         self.session = aiohttp.ClientSession()

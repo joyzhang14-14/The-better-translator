@@ -97,8 +97,12 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         if k in d:
             return await ctx.reply("❗已存在 already exist", mention_author=False)
         d[k] = value
-        _save_json(abbr_path, guild_abbrs)
-        await ctx.reply("✅已添加 added", mention_author=False)
+        # Save to persistent storage
+        success = await storage.save_json("abbreviations", guild_abbrs)
+        if success:
+            await ctx.reply("✅已添加 added", mention_author=False)
+        else:
+            await ctx.reply("⚠️已添加但保存失败 added but save failed", mention_author=False)
 
     @bot.command(name="delabbr")
     async def delabbr(ctx, key: str):
@@ -108,8 +112,12 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         d = guild_abbrs.get(gid, {})
         if key in d:
             d.pop(key)
-            _save_json(abbr_path, guild_abbrs)
-            return await ctx.reply("✅已删除 deleted", mention_author=False)
+            # Save to persistent storage
+            success = await storage.save_json("abbreviations", guild_abbrs)
+            if success:
+                return await ctx.reply("✅已删除 deleted", mention_author=False)
+            else:
+                return await ctx.reply("⚠️已删除但保存失败 deleted but save failed", mention_author=False)
         await ctx.reply("❌未找到 cannot find", mention_author=False)
 
     @bot.command(name="listabbr")
