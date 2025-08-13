@@ -543,31 +543,48 @@ class TranslatorBot(commands.Bot):
 
     async def _apply_star_patch(self, prev_text: str, patch: str) -> str:
         lang = await self.detect_language(prev_text)
+        logger.info(f"DEBUG: Star patch - lang: {lang}, prev: '{prev_text}', patch: '{patch}'")
+        
         if lang == "Chinese":
             sys = (
-                "你要用给定的补丁修正一条中文消息。补丁以星号结尾，表示想要替换的词。"
-                "请在原句上做最小修改：替换最可能的部分，使句意符合补丁。"
-                "不要改动无关内容，保留标点与风格。只返回修正后的中文句子。"
+                "用户发送了两条消息：第一条是完整句子，第二条以*结尾是补丁。"
+                "你需要将补丁内容智能地合并到原句中，形成一个完整的新句子。"
+                "规则：\n"
+                "1. 如果补丁是替换词，就替换原句中最相关的部分\n"
+                "2. 如果补丁是补充词，就添加到原句合适的位置\n"
+                "3. 保持语法正确和语义连贯\n"
+                "4. 只返回合并后的完整句子，不要解释"
             )
-            usr = f"原句：\n{prev_text}\n补丁：\n{patch}"
+            usr = f"原句：{prev_text}\n补丁：{patch}\n\n请返回合并后的句子："
         else:
             sys = (
-                "You will fix an English message using a star patch. The PATCH ends with * and "
-                "indicates the intended replacement. Apply minimal edit to ORIGINAL and return only the corrected sentence."
+                "User sent two messages: first is a complete sentence, second ends with * as a patch. "
+                "You need to intelligently merge the patch content into the original sentence to form one complete new sentence.\n"
+                "Rules:\n"
+                "1. If patch is a replacement word, replace the most relevant part in original\n"
+                "2. If patch is additional word, add it to appropriate position in original\n"
+                "3. Keep grammar correct and meaning coherent\n"
+                "4. Return only the merged complete sentence, no explanation"
             )
-            usr = f"ORIGINAL:\n{prev_text}\nPATCH:\n{patch}"
+            usr = f"ORIGINAL: {prev_text}\nPATCH: {patch}\n\nReturn merged sentence:"
+        
         try:
             if not self.openai_client:
-                return prev_text
+                # Simple fallback: append patch to original
+                return f"{prev_text} {patch}".strip()
+            
             r = await self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 temperature=0.0
             )
-            return (r.choices[0].message.content or "").strip() or prev_text
+            result = (r.choices[0].message.content or "").strip()
+            logger.info(f"DEBUG: Star patch result: '{result}'")
+            return result or prev_text
         except Exception as e:
             logger.error(f"OpenAI star patch failed: {e}")
-            return prev_text
+            # Fallback: simple append
+            return f"{prev_text} {patch}".strip()
 
     async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
         logger.info(f"DEBUG: _call_translate: '{src_text}' from {src_lang} to {tgt_lang}")
