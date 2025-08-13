@@ -743,10 +743,13 @@ class TranslatorBot(commands.Bot):
             return
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
+        logger.info(f"DEBUG: Original message: '{raw}'")
         # Apply preprocessing first (handles 6/666 -> 厉害 conversion)
         from preprocess import preprocess
         raw = preprocess(raw, "zh_to_en")  # Always use zh_to_en for praise number conversion
+        logger.info(f"DEBUG: After preprocessing: '{raw}'")
         raw = self._text_after_abbrev_pre(raw, gid)
+        logger.info(f"DEBUG: After abbreviations: '{raw}'")
         if await self.is_pass_through(msg):
             if is_en:
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], raw, msg, lang="Chinese")
@@ -758,6 +761,7 @@ class TranslatorBot(commands.Bot):
             raw = patched
         txt = strip_banner(raw)
         lang = await self.detect_language(txt)
+        logger.info(f"DEBUG: Detected language: '{lang}' for text: '{txt}'")
         async def to_target(text: str, direction: str) -> str:
             tr = await self.translate_text(text, direction, cm)
             if tr == "/":
@@ -769,14 +773,19 @@ class TranslatorBot(commands.Bot):
                 return text
             return tr
         if is_en:
+            logger.info(f"DEBUG: In English channel, detected language: {lang}")
             if lang == "English":
+                logger.info(f"DEBUG: English in EN channel - translating to Chinese")
                 tr = await to_target(txt, "en_to_zh")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
             elif lang == "Chinese":
+                logger.info(f"DEBUG: Chinese in EN channel - sending to both channels")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
                 tr = await to_target(txt, "zh_to_en")
+                logger.info(f"DEBUG: Translated '{txt}' to '{tr}' for English channel")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             else:
+                logger.info(f"DEBUG: Meaningless in EN channel - sending to Chinese")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
         else:
             if lang == "Chinese":
