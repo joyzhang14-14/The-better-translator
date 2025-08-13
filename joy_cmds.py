@@ -1,7 +1,10 @@
 import os
 import json
+import logging
 from discord.ext import commands
 from storage import storage
+
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 PASSTHROUGH_PATH = os.path.join(os.path.dirname(__file__), "passthrough.json")
@@ -123,14 +126,18 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
     @bot.command(name="listabbr")
     async def listabbr(ctx):
         gid = str(ctx.guild.id)
+        
+        # Debug logging
+        logger.info(f"DEBUG listabbr - guild_abbrs type: {type(guild_abbrs)}")
+        logger.info(f"DEBUG listabbr - guild_abbrs is: {guild_abbrs}")
+        
         guild_specific = guild_abbrs.get(gid, {})
         default_abbrs = guild_abbrs.get("default", {})
         
-        # Debug logging
-        print(f"DEBUG listabbr - guild_abbrs keys: {list(guild_abbrs.keys())}")
-        print(f"DEBUG listabbr - default_abbrs count: {len(default_abbrs)}")
-        print(f"DEBUG listabbr - guild_specific count: {len(guild_specific)}")
-        print(f"DEBUG listabbr - default sample: {list(default_abbrs.keys())[:5]}")
+        logger.info(f"DEBUG listabbr - guild_abbrs keys: {list(guild_abbrs.keys())}")
+        logger.info(f"DEBUG listabbr - default_abbrs count: {len(default_abbrs)}")
+        logger.info(f"DEBUG listabbr - guild_specific count: {len(guild_specific)}")
+        logger.info(f"DEBUG listabbr - default sample: {list(default_abbrs.keys())[:5]}")
         
         lines = []
         
@@ -238,3 +245,8 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         _save_json(CONFIG_PATH, config)
         names = ", ".join(r.name for r in roles)
         await ctx.reply(f"✅已移出 removed: {names}", mention_author=False)
+
+    @bot.command(name="test")
+    async def test(ctx):
+        logger.info("TEST command called")
+        await ctx.reply("Bot is working! Test successful.", mention_author=False)
