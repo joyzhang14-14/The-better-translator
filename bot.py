@@ -10,7 +10,7 @@ from collections import deque
 
 import aiohttp
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import openai
 from PIL import Image
 import pytesseract
@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 
 from preprocess import preprocess, FSURE_HEAD, FSURE_SEP
 import joy_cmds as prompt_mod
+import health_server
 
 # Load environment variables from .env file
 load_dotenv()
@@ -216,6 +217,7 @@ class TranslatorBot(commands.Bot):
         self.no_ping = discord.AllowedMentions(everyone=False, users=False, roles=False, replied_user=False)
         self.mirror_map: Dict[int, Dict[int, Dict[int, int]]] = {}
         self._recent_user_message: Dict[int, int] = {}
+        self.health_runner = None
 
     def _mirror_load(self):
         try:
@@ -252,12 +254,30 @@ class TranslatorBot(commands.Bot):
     async def setup_hook(self):
         self._mirror_load()
         self.session = aiohttp.ClientSession()
+        # Start health check server
+        self.health_runner = await health_server.start_health_server()
+        # Start heartbeat task
+        self.heartbeat_task.start()
 
     async def close(self):
         if self.session and not self.session.closed:
             await self.session.close()
         self._mirror_save()
+        # Stop heartbeat task
+        self.heartbeat_task.cancel()
+        # Stop health server
+        if self.health_runner:
+            await self.health_runner.cleanup()
         await super().close()
+    
+    @tasks.loop(seconds=30)
+    async def heartbeat_task(self):
+        """Send heartbeat to health server"""
+        health_server.update_bot_status(running=True)
+    
+    @heartbeat_task.before_loop
+    async def before_heartbeat(self):
+        await self.wait_until_ready()
 
     def _mirror_add(self, gid: int, src_id: int, ch_id: int, mapped_id: int):
         self.mirror_map.setdefault(gid, {}).setdefault(src_id, {})[ch_id] = mapped_id
