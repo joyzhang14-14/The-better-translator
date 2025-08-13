@@ -760,12 +760,17 @@ class TranslatorBot(commands.Bot):
         logger.info(f"DEBUG: After preprocessing: '{raw}'")
         raw = self._text_after_abbrev_pre(raw, gid)
         logger.info(f"DEBUG: After abbreviations: '{raw}'")
-        if await self.is_pass_through(msg):
+        # Check pass-through using preprocessed text, not original message
+        temp_msg = msg  # Create a temporary message object with processed content
+        temp_msg.content = raw
+        if await self.is_pass_through(temp_msg):
+            logger.info(f"DEBUG: Message '{raw}' marked as pass-through")
             if is_en:
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], raw, msg, lang="Chinese")
             else:
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw, msg, lang="English")
             return
+        logger.info(f"DEBUG: Message '{raw}' will go through translation")
         patched = await self._process_star_patch_if_any(msg)
         if patched is not None:
             raw = patched
