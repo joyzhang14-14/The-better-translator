@@ -77,13 +77,13 @@ class PersistentStorage:
     async def _save_to_url(self, key: str, data: Dict[str, Any]) -> bool:
         """Save to URL-based storage (JSONBin)"""
         try:
-            # First load existing data from the bin
+            # First try to load existing data from the bin
             existing_data = await self._load_existing_bin()
             
             # Update the specific key in the existing data
             existing_data[key] = data
             
-            # Save the combined data back to the bin
+            # Try to update existing bin first
             url = f"{self.storage_url}/{self.bin_id}"
             headers = {
                 'Content-Type': 'application/json',
@@ -102,11 +102,52 @@ class PersistentStorage:
                     if response.status in [200, 201]:
                         logger.info(f"Successfully saved {key} to JSONBin")
                         return True
+                    elif response.status == 404:
+                        # Bin doesn't exist, create it
+                        logger.info("Bin not found, creating new bin...")
+                        return await self._create_new_bin(existing_data)
                     else:
                         logger.error(f"Failed to save {key}: HTTP {response.status} - {response_text}")
                         return False
         except Exception as e:
             logger.error(f"Failed to save {key} to URL: {e}")
+            return False
+
+    async def _create_new_bin(self, data: Dict[str, Any]) -> bool:
+        """Create a new JSONBin"""
+        try:
+            url = f"{self.storage_url}"
+            headers = {
+                'Content-Type': 'application/json',
+                'X-Master-Key': self.storage_token,
+                'X-Bin-Name': 'discord-bot-storage',
+                'X-Bin-Private': 'false'
+            }
+            
+            logger.info(f"Creating new JSONBin at {url}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=data, headers=headers) as response:
+                    response_text = await response.text()
+                    logger.info(f"Create bin response: HTTP {response.status} - {response_text[:200]}")
+                    
+                    if response.status in [200, 201]:
+                        # Extract the new bin ID from response
+                        try:
+                            response_data = await response.json()
+                            new_bin_id = response_data.get('metadata', {}).get('id')
+                            if new_bin_id:
+                                logger.info(f"Successfully created new bin with ID: {new_bin_id}")
+                                logger.info(f"Update your JSONBIN_ID environment variable to: {new_bin_id}")
+                            return True
+                        except:
+                            logger.info("Successfully created new bin but couldn't extract ID")
+                            return True
+                    else:
+                        logger.error(f"Failed to create bin: HTTP {response.status} - {response_text}")
+                        return False
+        except Exception as e:
+            logger.error(f"Failed to create new bin: {e}")
             return False
 
     async def _load_existing_bin(self) -> Dict[str, Any]:
