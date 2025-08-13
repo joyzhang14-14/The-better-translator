@@ -427,21 +427,66 @@ class TranslatorBot(commands.Bot):
         t = (text or "").strip()
         if not t:
             return "meaningless"
+        
+        # First try simple character counting for obvious cases
         t2 = CUSTOM_EMOJI_RE.sub("", t)
         t2 = UNICODE_EMOJI_RE.sub("", t2)
         t2 = re.sub(r"(e?m+)+", "em", t2, flags=re.IGNORECASE)
         zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
         en_count = len(re.findall(r"[A-Za-z]", t2))
+        
+        # Pure single language cases
         if zh_count and not en_count:
             return "Chinese"
         if en_count and not zh_count:
             return "English"
-        if zh_count or en_count:
-            if en_count >= zh_count * 1.2:
-                return "English"
-            if zh_count >= en_count * 1.2:
-                return "Chinese"
+        
+        # Mixed language cases - use AI to determine primary language
+        if zh_count and en_count:
+            logger.info(f"DEBUG: Mixed language detected: zh={zh_count}, en={en_count}")
+            return await self._ai_detect_language(t)
+        
         return "meaningless"
+
+    async def _ai_detect_language(self, text: str) -> str:
+        """Use AI to detect primary language for mixed-language text"""
+        sys = (
+            "Analyze the text and determine the PRIMARY language. "
+            "Consider which language carries the main meaning. "
+            "Output exactly one word: Chinese, English, or meaningless."
+        )
+        usr = f"Text: {text}"
+        try:
+            if not self.openai_client:
+                # Fallback to character counting
+                t2 = CUSTOM_EMOJI_RE.sub("", text)
+                zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
+                en_count = len(re.findall(r"[A-Za-z]", t2))
+                return "Chinese" if zh_count >= en_count else "English"
+                
+            r = await self.openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
+                max_tokens=5, 
+                temperature=0.0
+            )
+            result = (r.choices[0].message.content or "").strip().lower()
+            if "chinese" in result:
+                return "Chinese"
+            if "english" in result:
+                return "English"
+            # Default fallback
+            t2 = CUSTOM_EMOJI_RE.sub("", text)
+            zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
+            en_count = len(re.findall(r"[A-Za-z]", t2))
+            return "Chinese" if zh_count >= en_count else "English"
+        except Exception as e:
+            logger.error(f"AI language detection failed: {e}")
+            # Fallback to character counting
+            t2 = CUSTOM_EMOJI_RE.sub("", text)
+            zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
+            en_count = len(re.findall(r"[A-Za-z]", t2))
+            return "Chinese" if zh_count >= en_count else "English"
 
     async def classify_text(self, text: str) -> str:
         sys = (
@@ -663,7 +708,8 @@ class TranslatorBot(commands.Bot):
                 gid_str = str(msg.guild.id)
                 cm = guild_dicts.get(gid_str, {})
                 if await self.is_profanity(text):
-                    ocr_tr = "(swearing)"
+                    # Return appropriate swear message based on target language
+                    ocr_tr = "（脏话）" if lang == "Chinese" else "(swearing)"
                 else:
                     ocr_lang = await self.detect_language(text)
                     if ocr_lang == "Chinese":
@@ -782,9 +828,11 @@ class TranslatorBot(commands.Bot):
             if tr == "/":
                 cls = await self.classify_text(text)
                 if cls == "SWEAR":
-                    return "(swearing)"
+                    # Return appropriate swear message based on target language
+                    return "（脏话）" if direction == "en_to_zh" else "(swearing)"
                 if cls == "ILLEGAL":
-                    return "(violated law)"
+                    # Return appropriate illegal message based on target language  
+                    return "（违法内容）" if direction == "en_to_zh" else "(violated law)"
                 return text
             return tr
         if is_en:
