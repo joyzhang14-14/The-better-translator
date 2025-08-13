@@ -58,20 +58,25 @@ class PersistentStorage:
             return False
     
     async def _load_from_url(self, key: str, fallback: Dict[str, Any]) -> Dict[str, Any]:
-        """Load from URL-based storage (e.g., JSONBin, GitHub Gist)"""
+        """Load from URL-based storage (JSONBin)"""
         try:
-            url = f"{self.storage_url}/{key}"
-            headers = {}
-            if self.storage_token:
-                headers['Authorization'] = f"Bearer {self.storage_token}"
+            # For JSONBin, we need to create bins with specific IDs
+            bin_id = f"bot-{key}"
+            url = f"{self.storage_url}/{bin_id}/latest"
+            headers = {
+                'X-Master-Key': self.storage_token
+            }
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
                     if response.status == 200:
-                        data = await response.json()
+                        response_data = await response.json()
+                        # JSONBin wraps data in 'record' field
+                        data = response_data.get('record', response_data)
+                        logger.info(f"Loaded {key} from JSONBin successfully")
                         return data
                     elif response.status == 404:
-                        logger.info(f"Storage key {key} not found, using fallback")
+                        logger.info(f"Storage key {key} not found in JSONBin, using fallback")
                         return fallback
                     else:
                         logger.error(f"Failed to load {key}: HTTP {response.status}")
@@ -81,20 +86,25 @@ class PersistentStorage:
             return fallback
     
     async def _save_to_url(self, key: str, data: Dict[str, Any]) -> bool:
-        """Save to URL-based storage"""
+        """Save to URL-based storage (JSONBin)"""
         try:
-            url = f"{self.storage_url}/{key}"
-            headers = {'Content-Type': 'application/json'}
-            if self.storage_token:
-                headers['Authorization'] = f"Bearer {self.storage_token}"
+            bin_id = f"bot-{key}"
+            url = f"{self.storage_url}/{bin_id}"
+            headers = {
+                'Content-Type': 'application/json',
+                'X-Master-Key': self.storage_token,
+                'X-Bin-Name': f"Discord Bot - {key}",
+                'X-Bin-Private': 'false'
+            }
             
             async with aiohttp.ClientSession() as session:
                 async with session.put(url, json=data, headers=headers) as response:
                     if response.status in [200, 201]:
-                        logger.info(f"Successfully saved {key} to storage")
+                        logger.info(f"Successfully saved {key} to JSONBin")
                         return True
                     else:
-                        logger.error(f"Failed to save {key}: HTTP {response.status}")
+                        response_text = await response.text()
+                        logger.error(f"Failed to save {key}: HTTP {response.status} - {response_text}")
                         return False
         except Exception as e:
             logger.error(f"Failed to save {key} to URL: {e}")
