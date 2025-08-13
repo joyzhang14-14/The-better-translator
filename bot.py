@@ -274,13 +274,33 @@ class TranslatorBot(commands.Bot):
         logger.info("Loading persistent data...")
         guild_dicts.update(await storage.load_json("dictionary", {}))
         
+        # Hardcoded default abbreviations as fallback
+        hardcoded_defaults = {
+            "default": {
+                "wc": "卧槽", "nb": "牛逼", "666": "厉害", "xswl": "笑死我了",
+                "glhf": "good luck have fun", "afk": "away from keyboard", 
+                "brb": "be right back", "idk": "I don't know", "idc": "I don't care",
+                "ikr": "I know right", "imo": "in my opinion", "btw": "by the way",
+                "tbh": "to be honest", "ngl": "not gonna lie", "lmk": "let me know",
+                "omg": "oh my god", "wtf": "what the fuck", "wth": "what the hell",
+                "smh": "shaking my head", "lol": "laughing out loud", 
+                "lmao": "laughing my ass off", "nvm": "never mind", 
+                "asap": "as soon as possible", "aka": "also known as",
+                "irl": "in real life", "dm": "direct message", "np": "no problem",
+                "ty": "thank you", "thx": "thanks", "pls": "please", "plz": "please",
+                "rn": "right now", "ppl": "people", "u": "you", "ur": "your",
+                "ya": "yeah", "yea": "yeah", "bc": "because", "cuz": "because",
+                "tho": "though", "fr": "for real", "rip": "rest in peace", "jk": "just kidding"
+            }
+        }
+        
         # Load abbreviations from local file first (for defaults), then merge with cloud data
         logger.info(f"Attempting to load abbreviations from: {ABBREV_PATH}")
         logger.info(f"File exists: {os.path.exists(ABBREV_PATH)}")
         logger.info(f"Current working directory: {os.getcwd()}")
         logger.info(f"BASE directory: {BASE}")
         
-        local_abbrs = _load_json_or(ABBREV_PATH, {"default": {}})
+        local_abbrs = _load_json_or(ABBREV_PATH, hardcoded_defaults)
         cloud_abbrs = await storage.load_json("abbreviations", {})
         
         # Debug logging
