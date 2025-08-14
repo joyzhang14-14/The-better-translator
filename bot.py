@@ -695,13 +695,26 @@ class TranslatorBot(commands.Bot):
                 gid_str = str(msg.guild.id)
                 cm = guild_dicts.get(gid_str, {})
                 ocr_lang = await self.detect_language(text)
-                if ocr_lang == "Chinese":
-                    ocr_tr = await self.translate_text(text, "zh_to_en", cm)
-                elif ocr_lang == "English":
-                    ocr_tr = await self.translate_text(text, "en_to_zh", cm)
+                
+                # Follow the translation logic based on target language
+                if lang == "Chinese":  # Target is Chinese channel
+                    if ocr_lang == "English":
+                        # English image text -> translate to Chinese for Chinese channel
+                        ocr_tr = await self.translate_text(text, "en_to_zh", cm)
+                    else:
+                        # Chinese or other -> keep original for Chinese channel
+                        ocr_tr = text
+                elif lang == "English":  # Target is English channel
+                    if ocr_lang == "Chinese":
+                        # Chinese image text -> translate to English for English channel
+                        ocr_tr = await self.translate_text(text, "zh_to_en", cm)
+                    else:
+                        # English or other -> keep original for English channel
+                        ocr_tr = text
                 else:
-                    ocr_tr = ""
-                if ocr_tr and ocr_tr != "/":
+                    ocr_tr = text
+                
+                if ocr_tr and ocr_tr != "/" and ocr_tr.strip():
                     ocr_lines.append("Image text translation: " + ocr_tr)
             except Exception:
                 logger.exception("OCR failed for an attachment")
