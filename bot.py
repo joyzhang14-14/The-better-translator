@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import uuid
+import time
 from typing import Optional, Tuple, List, Dict
 from io import BytesIO
 from collections import deque
@@ -245,6 +247,9 @@ class TranslatorBot(commands.Bot):
         self.mirror_map: Dict[int, Dict[int, Dict[int, int]]] = {}
         self._recent_user_message: Dict[int, int] = {}
         self.health_runner = None
+        # Generate unique instance ID for debugging
+        self.instance_id = str(uuid.uuid4())[:8]
+        self.start_time = int(time.time())
 
     def _mirror_load(self):
         try:
@@ -1044,8 +1049,8 @@ class TranslatorBot(commands.Bot):
         if msg.author.bot or msg.webhook_id or not msg.guild:
             return
         
-        # Debug: Track message processing
-        logger.info(f"DEBUG: === Processing message {msg.id} in channel {msg.channel.id}: '{msg.content}' ===")
+        # Debug: Track message processing with instance ID
+        logger.info(f"DEBUG: === [BOT:{self.instance_id}] Processing message {msg.id} in channel {msg.channel.id}: '{msg.content}' ===")
         
         await self.process_commands(msg)
         gid = str(msg.guild.id)
@@ -1140,7 +1145,7 @@ class TranslatorBot(commands.Bot):
         else:
             if lang == "Chinese":
                 tr = await to_target(txt, "zh_to_en")
-                logger.info(f"DEBUG: === SENDING ZH->EN TO EN CHANNEL: '{tr}' ===")
+                logger.info(f"DEBUG: === [BOT:{self.instance_id}] SENDING ZH->EN TO EN CHANNEL: '{tr}' ===")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "English":
                 # Send original English to English channel
@@ -1201,6 +1206,7 @@ def main():
     logger.info("Starting Discord Translator Bot...")
     logger.info(f"Bot will run on {len(config.get('guilds', {}))} configured guilds")
     bot = TranslatorBot()
+    logger.info(f"Bot Instance ID: {bot.instance_id} | Start Time: {bot.start_time}")
     prompt_mod.register_commands(
         bot=bot,
         config=config,

@@ -250,3 +250,20 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
     async def test(ctx):
         logger.info("TEST command called")
         await ctx.reply("Bot is working! Test successful.", mention_author=False)
+    
+    @bot.command(name="botinfo")
+    async def botinfo(ctx):
+        """Show bot instance information to detect multiple instances"""
+        import time
+        uptime = int(time.time()) - bot.start_time
+        uptime_str = f"{uptime//3600}h {(uptime%3600)//60}m {uptime%60}s"
+        
+        info = f"""🤖 **Bot Instance Info**
+**Instance ID:** `{bot.instance_id}`
+**Start Time:** <t:{bot.start_time}:F>
+**Uptime:** {uptime_str}
+**Bot User:** {bot.user.mention if bot.user else 'Not logged in'}
+**Guilds:** {len(bot.guilds)}
+**Latency:** {round(bot.latency * 1000)}ms"""
+        
+        await ctx.reply(info, mention_author=False)
