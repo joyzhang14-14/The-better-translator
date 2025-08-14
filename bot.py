@@ -481,7 +481,7 @@ class TranslatorBot(commands.Bot):
                 return "Chinese" if zh_count >= en_count else "English"
                 
             r = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-5-mini",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 max_tokens=5, 
                 temperature=0.0
@@ -524,7 +524,7 @@ class TranslatorBot(commands.Bot):
             sys = "Classify if the text contains profanity or swear words. Reply with exactly one token: PROFANE or CLEAN."
             usr = f"<text>{t}</text>"
             r = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-5-mini",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 max_tokens=1, temperature=0.0
             )
@@ -567,7 +567,7 @@ class TranslatorBot(commands.Bot):
             
             logger.info(f"DEBUG: Calling OpenAI for star patch merge...")
             r = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-5-mini",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 temperature=0.0
             )
