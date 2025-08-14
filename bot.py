@@ -772,6 +772,7 @@ class TranslatorBot(commands.Bot):
             )
             try:
                 if isinstance(sent, (discord.Message, discord.WebhookMessage)):
+                    logger.info(f"DEBUG: Adding mirror mapping: user_msg {msg.id} -> translated_msg {sent.id} in channel {target_channel_id}")
                     self._mirror_add(msg.guild.id, msg.id, target_channel_id, int(sent.id))
                     self._mirror_add(msg.guild.id, int(sent.id), msg.channel.id, msg.id)
             except Exception:
@@ -930,20 +931,29 @@ class TranslatorBot(commands.Bot):
         
         # Get the original message that this patch is based on
         last_id = self._recent_user_message.get(msg.author.id)
+        logger.info(f"DEBUG: _recent_user_message for user {msg.author.id}: {last_id}")
         if not last_id:
             logger.info("DEBUG: No previous message found for star patch edit")
             return
             
         logger.info(f"DEBUG: Looking for mirrors of original message {last_id}")
         logger.info(f"DEBUG: Current mirror_map has {len(self.mirror_map.get(msg.guild.id, {}))} entries for this guild")
+        
+        # Debug: show full mirror_map for this guild
+        gid_int = msg.guild.id
+        guild_mirrors = self.mirror_map.get(gid_int, {})
+        logger.info(f"DEBUG: Full mirror_map for guild {gid_int}: {guild_mirrors}")
             
         try:
             # Find the mirror messages for the original message
-            gid_int = msg.guild.id
             neighbors = self._mirror_neighbors(gid_int, last_id)
             if not neighbors:
                 logger.info(f"DEBUG: No mirror messages found for original message {last_id}")
-                logger.info(f"DEBUG: Available message IDs in mirror_map: {list(self.mirror_map.get(gid_int, {}).keys())}")
+                logger.info(f"DEBUG: Available message IDs in mirror_map: {list(guild_mirrors.keys())}")
+                
+                # Check if any of the available IDs might be the right one
+                for msg_id, channels in guild_mirrors.items():
+                    logger.info(f"DEBUG: Message {msg_id} maps to channels: {channels}")
                 return
             
             logger.info(f"DEBUG: Found {len(neighbors)} mirror messages for original message {last_id}: {neighbors}")
