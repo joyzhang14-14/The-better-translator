@@ -898,7 +898,7 @@ class TranslatorBot(commands.Bot):
     async def on_message(self, msg: discord.Message):
         if msg.author.bot or msg.webhook_id or not msg.guild:
             return
-        self._recent_user_message[msg.author.id] = msg.id
+        
         await self.process_commands(msg)
         gid = str(msg.guild.id)
         cfg = self._guild_cfg(gid)
@@ -910,6 +910,14 @@ class TranslatorBot(commands.Bot):
             return
         if _is_command_text(gid, msg.content):
             return
+        
+        # Check for star patch FIRST (before updating recent message ID)
+        original_content = msg.content or ""
+        patched = await self._process_star_patch_if_any_with_content(original_content, msg)
+        
+        # Update recent message ID only after patch check
+        self._recent_user_message[msg.author.id] = msg.id
+        
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
         logger.info(f"DEBUG: Original message: '{raw}'")
@@ -920,9 +928,6 @@ class TranslatorBot(commands.Bot):
         raw = self._text_after_abbrev_pre(raw, gid)
         logger.info(f"DEBUG: After abbreviations: '{raw}'")
         
-        # Check for star patch FIRST using original message content (before preprocessing)
-        original_content = msg.content or ""
-        patched = await self._process_star_patch_if_any_with_content(original_content, msg)
         if patched is not None:
             logger.info(f"DEBUG: Star patch applied, using patched content: '{patched}'")
             # Apply preprocessing and abbreviations to the patched result
