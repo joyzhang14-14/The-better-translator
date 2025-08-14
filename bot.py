@@ -895,6 +895,71 @@ class TranslatorBot(commands.Bot):
                 return fixed
         return None
 
+    async def _handle_star_patch_edit(self, processed_content: str, msg: discord.Message, cfg: dict, gid: str, cm: dict):
+        """Handle star patch by editing existing translated messages instead of sending new ones"""
+        logger.info(f"DEBUG: Handling star patch edit for content: '{processed_content}'")
+        
+        # Get the original message that this patch is based on
+        last_id = self._recent_user_message.get(msg.author.id)
+        if not last_id:
+            logger.info("DEBUG: No previous message found for star patch edit")
+            return
+            
+        try:
+            # Find the mirror messages for the original message
+            gid_int = msg.guild.id
+            neighbors = self._mirror_neighbors(gid_int, last_id)
+            if not neighbors:
+                logger.info(f"DEBUG: No mirror messages found for original message {last_id}")
+                return
+                
+            txt = strip_banner(processed_content)
+            lang = await self.detect_language(txt)
+            logger.info(f"DEBUG: Star patch detected language: '{lang}' for text: '{txt}'")
+            
+            async def to_target(text: str, direction: str) -> str:
+                tr = await self.translate_text(text, direction, cm)
+                if tr == "/":
+                    return text
+                return tr
+            
+            # Edit messages in target channels
+            is_en = msg.channel.id == cfg["en_channel_id"]
+            is_zh = msg.channel.id == cfg["zh_channel_id"]
+            
+            for ch_id, mirror_msg_id in neighbors.items():
+                try:
+                    ch = self.get_channel(ch_id) or await self.fetch_channel(ch_id)
+                    mirror_msg = await ch.fetch_message(mirror_msg_id)
+                    
+                    if is_en and ch_id == cfg["zh_channel_id"]:
+                        # From EN channel, edit ZH channel message
+                        if lang == "English":
+                            new_content = await to_target(txt, "en_to_zh")
+                        elif lang == "Chinese":
+                            new_content = txt
+                        else:
+                            new_content = txt
+                        await mirror_msg.edit(content=new_content)
+                        logger.info(f"DEBUG: Edited ZH message {mirror_msg_id} to: '{new_content}'")
+                        
+                    elif is_zh and ch_id == cfg["en_channel_id"]:
+                        # From ZH channel, edit EN channel message  
+                        if lang == "Chinese":
+                            new_content = await to_target(txt, "zh_to_en")
+                        elif lang == "English":
+                            new_content = txt
+                        else:
+                            new_content = txt
+                        await mirror_msg.edit(content=new_content)
+                        logger.info(f"DEBUG: Edited EN message {mirror_msg_id} to: '{new_content}'")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to edit mirror message {mirror_msg_id} in channel {ch_id}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Star patch edit failed: {e}")
+
     async def on_message(self, msg: discord.Message):
         if msg.author.bot or msg.webhook_id or not msg.guild:
             return
@@ -934,6 +999,10 @@ class TranslatorBot(commands.Bot):
             raw = preprocess(patched, "zh_to_en")
             raw = self._text_after_abbrev_pre(raw, gid)
             logger.info(f"DEBUG: Patched content after processing: '{raw}'")
+            
+            # For star patches, edit existing messages instead of sending new ones
+            await self._handle_star_patch_edit(raw, msg, cfg, gid, cm)
+            return
         
         # Check pass-through using processed text (after potential star patch)
         temp_msg = msg  # Create a temporary message object with processed content
