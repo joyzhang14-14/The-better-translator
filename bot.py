@@ -499,31 +499,6 @@ class TranslatorBot(commands.Bot):
             en_count = len(re.findall(r"[A-Za-z]", t2))
             return "Chinese" if zh_count >= en_count else "English"
 
-    async def classify_text(self, text: str) -> str:
-        sys = (
-            "Classify conservatively. Output exactly one token: SWEAR, ILLEGAL, OK.\n"
-            "SWEAR: only strong profanity/slurs.\n"
-            "ILLEGAL: clearly unlawful acts.\n"
-            "Otherwise OK."
-        )
-        try:
-            if not self.openai_client:
-                return "OK"
-            r = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role":"system","content":sys},{"role":"user","content":text}],
-                max_tokens=2, 
-                temperature=0.0
-            )
-            ans = (r.choices[0].message.content or "").strip().upper()
-            if "SWEAR" in ans:
-                return "SWEAR"
-            if "ILLEGAL" in ans:
-                return "ILLEGAL"
-        except Exception as e:
-            logger.error(f"OpenAI policy check failed: {e}")
-            pass
-        return "OK"
 
     async def is_profanity(self, text: str) -> bool:
         t = (text or "").strip()
@@ -934,13 +909,6 @@ class TranslatorBot(commands.Bot):
         async def to_target(text: str, direction: str) -> str:
             tr = await self.translate_text(text, direction, cm)
             if tr == "/":
-                cls = await self.classify_text(text)
-                if cls == "SWEAR":
-                    # Return appropriate swear message based on target language
-                    return "（脏话）" if direction == "en_to_zh" else "(swearing)"
-                if cls == "ILLEGAL":
-                    # Return appropriate illegal message based on target language  
-                    return "（违法内容）" if direction == "en_to_zh" else "(violated law)"
                 return text
             return tr
         if is_en:
