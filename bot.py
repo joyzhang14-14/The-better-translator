@@ -556,21 +556,28 @@ class TranslatorBot(commands.Bot):
         
         try:
             if not self.openai_client:
+                logger.info(f"DEBUG: No OpenAI client, using fallback")
                 # Simple fallback: append patch to original
                 return f"{prev_text} {patch}".strip()
             
+            logger.info(f"DEBUG: Calling OpenAI for star patch merge...")
             r = await self.openai_client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
                 temperature=0.0
             )
+            logger.info(f"DEBUG: OpenAI response received")
             result = (r.choices[0].message.content or "").strip()
             logger.info(f"DEBUG: Star patch result: '{result}'")
             return result or prev_text
         except Exception as e:
             logger.error(f"OpenAI star patch failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             # Fallback: simple append
-            return f"{prev_text} {patch}".strip()
+            fallback_result = f"{prev_text} {patch}".strip()
+            logger.info(f"DEBUG: Using fallback result: '{fallback_result}'")
+            return fallback_result
 
     async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
         logger.info(f"DEBUG: _call_translate: '{src_text}' from {src_lang} to {tgt_lang}")
