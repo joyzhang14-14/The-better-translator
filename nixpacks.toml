@@ -1,0 +1,2 @@
+[phases.system]
+aptPkgs = ["tesseract-ocr", "tesseract-ocr-chi-sim", "tesseract-ocr-eng"]

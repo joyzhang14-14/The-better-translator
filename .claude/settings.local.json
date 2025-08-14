@@ -14,7 +14,8 @@
       "Bash(git config:*)",
       "Bash(rm:*)",
       "Bash(git merge:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": [],
