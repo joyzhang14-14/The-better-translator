@@ -905,15 +905,19 @@ class TranslatorBot(commands.Bot):
             logger.info("DEBUG: No previous message found for star patch edit")
             return
             
+        logger.info(f"DEBUG: Looking for mirrors of original message {last_id}")
+        logger.info(f"DEBUG: Current mirror_map has {len(self.mirror_map.get(msg.guild.id, {}))} entries for this guild")
+            
         try:
             # Find the mirror messages for the original message
             gid_int = msg.guild.id
             neighbors = self._mirror_neighbors(gid_int, last_id)
             if not neighbors:
                 logger.info(f"DEBUG: No mirror messages found for original message {last_id}")
+                logger.info(f"DEBUG: Available message IDs in mirror_map: {list(self.mirror_map.get(gid_int, {}).keys())}")
                 return
             
-            logger.info(f"DEBUG: Found {len(neighbors)} mirror messages for original message {last_id}")
+            logger.info(f"DEBUG: Found {len(neighbors)} mirror messages for original message {last_id}: {neighbors}")
                 
             txt = strip_banner(processed_content)
             lang = await self.detect_language(txt)
@@ -1015,7 +1019,12 @@ class TranslatorBot(commands.Bot):
         
         # Check for star patch FIRST (before updating recent message ID)
         original_content = msg.content or ""
+        logger.info(f"DEBUG: Checking for star patch in message: '{original_content}'")
         patched = await self._process_star_patch_if_any_with_content(original_content, msg)
+        if patched is not None:
+            logger.info(f"DEBUG: Star patch detected! Patched content: '{patched}'")
+        else:
+            logger.info(f"DEBUG: No star patch detected")
         
         # Update recent message ID only after patch check
         self._recent_user_message[msg.author.id] = msg.id
