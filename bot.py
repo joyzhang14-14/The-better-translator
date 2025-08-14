@@ -912,6 +912,8 @@ class TranslatorBot(commands.Bot):
             if not neighbors:
                 logger.info(f"DEBUG: No mirror messages found for original message {last_id}")
                 return
+            
+            logger.info(f"DEBUG: Found {len(neighbors)} mirror messages for original message {last_id}")
                 
             txt = strip_banner(processed_content)
             lang = await self.detect_language(txt)
@@ -929,36 +931,71 @@ class TranslatorBot(commands.Bot):
             
             for ch_id, mirror_msg_id in neighbors.items():
                 try:
+                    logger.info(f"DEBUG: Trying to edit mirror message {mirror_msg_id} in channel {ch_id}")
                     ch = self.get_channel(ch_id) or await self.fetch_channel(ch_id)
                     mirror_msg = await ch.fetch_message(mirror_msg_id)
+                    logger.info(f"DEBUG: Found mirror message: '{mirror_msg.content[:50]}'")
                     
-                    if is_en and ch_id == cfg["zh_channel_id"]:
-                        # From EN channel, edit ZH channel message
-                        if lang == "English":
-                            new_content = await to_target(txt, "en_to_zh")
-                        elif lang == "Chinese":
-                            new_content = txt
-                        else:
-                            new_content = txt
-                        await mirror_msg.edit(content=new_content)
-                        logger.info(f"DEBUG: Edited ZH message {mirror_msg_id} to: '{new_content}'")
-                        
-                    elif is_zh and ch_id == cfg["en_channel_id"]:
+                    new_content = None
+                    
+                    if is_zh and ch_id == cfg["en_channel_id"]:
                         # From ZH channel, edit EN channel message  
+                        logger.info(f"DEBUG: Editing EN channel message from ZH channel")
                         if lang == "Chinese":
                             new_content = await to_target(txt, "zh_to_en")
                         elif lang == "English":
                             new_content = txt
                         else:
                             new_content = txt
-                        await mirror_msg.edit(content=new_content)
-                        logger.info(f"DEBUG: Edited EN message {mirror_msg_id} to: '{new_content}'")
+                            
+                    elif is_en and ch_id == cfg["zh_channel_id"]:
+                        # From EN channel, edit ZH channel message
+                        logger.info(f"DEBUG: Editing ZH channel message from EN channel")
+                        if lang == "English":
+                            new_content = await to_target(txt, "en_to_zh")
+                        elif lang == "Chinese":
+                            new_content = txt
+                        else:
+                            new_content = txt
+                    
+                    if new_content:
+                        logger.info(f"DEBUG: Attempting to edit message to: '{new_content}'")
+                        
+                        # Check if this is a webhook message
+                        if mirror_msg.webhook_id:
+                            logger.info(f"DEBUG: Editing webhook message via webhook")
+                            # For webhook messages, we need to use the webhook to edit
+                            if ch_id == cfg["zh_channel_id"] and "zh_webhook_url" in cfg:
+                                webhook_url = cfg["zh_webhook_url"]
+                            elif ch_id == cfg["en_channel_id"] and "en_webhook_url" in cfg:
+                                webhook_url = cfg["en_webhook_url"]
+                            else:
+                                logger.error(f"No webhook URL found for channel {ch_id}")
+                                continue
+                                
+                            if not self.session:
+                                logger.error("HTTP session not initialized")
+                                continue
+                                
+                            wh = discord.Webhook.from_url(webhook_url, session=self.session)
+                            await wh.edit_message(mirror_msg_id, content=new_content)
+                            logger.info(f"DEBUG: Successfully edited webhook message {mirror_msg_id} to: '{new_content}'")
+                        else:
+                            # Regular bot message
+                            await mirror_msg.edit(content=new_content)
+                            logger.info(f"DEBUG: Successfully edited bot message {mirror_msg_id} to: '{new_content}'")
+                    else:
+                        logger.info(f"DEBUG: No content to edit for channel {ch_id}")
                         
                 except Exception as e:
                     logger.error(f"Failed to edit mirror message {mirror_msg_id} in channel {ch_id}: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                     
         except Exception as e:
             logger.error(f"Star patch edit failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     async def on_message(self, msg: discord.Message):
         if msg.author.bot or msg.webhook_id or not msg.guild:
