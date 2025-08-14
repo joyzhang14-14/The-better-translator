@@ -505,32 +505,6 @@ class TranslatorBot(commands.Bot):
             return "Chinese" if zh_count >= en_count else "English"
 
 
-    async def is_profanity(self, text: str) -> bool:
-        t = (text or "").strip()
-        if not t:
-            return False
-        try:
-            if not self.openai_client:
-                return False
-            mr = await self.openai_client.moderations.create(model="text-moderation-latest", input=t)
-            if mr and mr.results:
-                return bool(mr.results[0].flagged)
-        except Exception as e:
-            logger.error(f"OpenAI moderation failed: {e}")
-            pass
-        try:
-            if not self.openai_client:
-                return False
-            sys = "Classify if the text contains profanity or swear words. Reply with exactly one token: PROFANE or CLEAN."
-            usr = f"<text>{t}</text>"
-            r = await self.openai_client.chat.completions.create(
-                model="gpt-5-mini",
-                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
-                max_tokens=1, temperature=0.0
-            )
-            return "profane" in (r.choices[0].message.content or "").lower()
-        except Exception:
-            return False
 
     async def _apply_star_patch(self, prev_text: str, patch: str) -> str:
         lang = await self.detect_language(prev_text)
@@ -720,17 +694,13 @@ class TranslatorBot(commands.Bot):
                     continue
                 gid_str = str(msg.guild.id)
                 cm = guild_dicts.get(gid_str, {})
-                if await self.is_profanity(text):
-                    # Return appropriate swear message based on target language
-                    ocr_tr = "（脏话）" if lang == "Chinese" else "(swearing)"
+                ocr_lang = await self.detect_language(text)
+                if ocr_lang == "Chinese":
+                    ocr_tr = await self.translate_text(text, "zh_to_en", cm)
+                elif ocr_lang == "English":
+                    ocr_tr = await self.translate_text(text, "en_to_zh", cm)
                 else:
-                    ocr_lang = await self.detect_language(text)
-                    if ocr_lang == "Chinese":
-                        ocr_tr = await self.translate_text(text, "zh_to_en", cm)
-                    elif ocr_lang == "English":
-                        ocr_tr = await self.translate_text(text, "en_to_zh", cm)
-                    else:
-                        ocr_tr = ""
+                    ocr_tr = ""
                 if ocr_tr and ocr_tr != "/":
                     ocr_lines.append("Image text translation: " + ocr_tr)
             except Exception:
