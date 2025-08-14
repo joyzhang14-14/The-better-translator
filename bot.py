@@ -829,9 +829,20 @@ class TranslatorBot(commands.Bot):
                     return None
                 
                 logger.info(f"DEBUG: Applying patch '{patch_text}' to base '{base_text}'")
-                fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
-                logger.info(f"DEBUG: Patch result: '{fixed}'")
-                return fixed
+                try:
+                    fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
+                    logger.info(f"DEBUG: Patch result received: '{fixed}'")
+                    if fixed and fixed.strip():
+                        logger.info(f"DEBUG: Returning valid patch result: '{fixed}'")
+                        return fixed
+                    else:
+                        logger.error(f"DEBUG: Patch result is empty or None, returning None")
+                        return None
+                except Exception as e:
+                    logger.error(f"DEBUG: Exception in _apply_star_patch: {e}")
+                    return None
+            else:
+                logger.info(f"DEBUG: No base message found for star patch")
         return None
 
     async def _process_star_patch_if_any(self, msg: discord.Message) -> Optional[str]:
@@ -890,9 +901,20 @@ class TranslatorBot(commands.Bot):
                     return None
                 
                 logger.info(f"DEBUG: Applying patch '{patch_text}' to base '{base_text}'")
-                fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
-                logger.info(f"DEBUG: Patch result: '{fixed}'")
-                return fixed
+                try:
+                    fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
+                    logger.info(f"DEBUG: Patch result received: '{fixed}'")
+                    if fixed and fixed.strip():
+                        logger.info(f"DEBUG: Returning valid patch result: '{fixed}'")
+                        return fixed
+                    else:
+                        logger.error(f"DEBUG: Patch result is empty or None, returning None")
+                        return None
+                except Exception as e:
+                    logger.error(f"DEBUG: Exception in _apply_star_patch: {e}")
+                    return None
+            else:
+                logger.info(f"DEBUG: No base message found for star patch")
         return None
 
     async def _handle_star_patch_edit(self, processed_content: str, msg: discord.Message, cfg: dict, gid: str, cm: dict):
