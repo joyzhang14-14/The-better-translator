@@ -4,8 +4,6 @@ import json
 import logging
 import os
 import re
-import uuid
-import time
 from typing import Optional, Tuple, List, Dict
 from io import BytesIO
 from collections import deque
@@ -253,9 +251,6 @@ class TranslatorBot(commands.Bot):
         self.mirror_map: Dict[int, Dict[int, Dict[int, int]]] = {}
         self._recent_user_message: Dict[int, int] = {}
         self.health_runner = None
-        # Generate unique instance ID for debugging
-        self.instance_id = str(uuid.uuid4())[:8]
-        self.start_time = int(time.time())
 
     def _mirror_load(self):
         try:
@@ -465,7 +460,6 @@ class TranslatorBot(commands.Bot):
         
         # Mixed language cases - use AI to determine primary language
         if zh_count and en_count:
-            logger.info(f"DEBUG: Mixed language detected: zh={zh_count}, en={en_count}")
             return await self._ai_detect_language(t)
         
         return "meaningless"
@@ -591,9 +585,7 @@ class TranslatorBot(commands.Bot):
             return fallback_result
 
     async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
-        logger.info(f"DEBUG: _call_translate: '{src_text}' from {src_lang} to {tgt_lang}")
         if not src_text:
-            logger.info("DEBUG: Empty src_text, returning /")
             return "/"
         
         try:
@@ -613,23 +605,19 @@ class TranslatorBot(commands.Bot):
                 logger.error(f"Unsupported target language: {tgt_lang}")
                 return "/"
             
-            logger.info(f"DEBUG: Calling DeepL API with source={source_lang}, target={target_lang}")
             result = await asyncio.get_event_loop().run_in_executor(
                 None, 
                 lambda: deepl_client.translate_text(src_text, target_lang=target_lang, source_lang=source_lang)
             )
             out = result.text.strip()
-            logger.info(f"DEBUG: DeepL returned: '{out}'")
             return out or "/"
         except Exception as e:
             logger.error(f"DeepL translation failed: {e}")
             return "/"
 
     async def translate_text(self, text: str, direction: str, custom_map: dict) -> str:
-        logger.info(f"DEBUG: translate_text called with '{text}', direction='{direction}'")
         if direction == "zh_to_en":
             pre = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
-            logger.info(f"DEBUG: After dictionary+preprocess: '{pre}'")
             if pre.startswith(FSURE_HEAD):
                 payload = pre[len(FSURE_HEAD):]
                 if FSURE_SEP in payload:
@@ -644,14 +632,10 @@ class TranslatorBot(commands.Bot):
                     if en_tail and en_tail != "/":
                         out = out + ", " + en_tail
                 return out or "/"
-            result = await self._call_translate(pre, "Chinese", "English")
-            logger.info(f"DEBUG: Translation result: '{result}'")
-            return result
+            return await self._call_translate(pre, "Chinese", "English")
         else:
             pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
-            result = await self._call_translate(pre, "English", "Chinese (Simplified)")
-            logger.info(f"DEBUG: Translation result: '{result}'")
-            return result
+            return await self._call_translate(pre, "English", "Chinese (Simplified)")
 
     def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
         return _apply_abbreviations(s or "", gid)
@@ -783,7 +767,6 @@ class TranslatorBot(commands.Bot):
             )
             try:
                 if isinstance(sent, (discord.Message, discord.WebhookMessage)):
-                    logger.info(f"DEBUG: Adding mirror mapping: user_msg {msg.id} -> translated_msg {sent.id} in channel {target_channel_id}")
                     self._mirror_add(msg.guild.id, msg.id, target_channel_id, int(sent.id))
                     self._mirror_add(msg.guild.id, int(sent.id), msg.channel.id, msg.id)
             except Exception:
@@ -1055,9 +1038,6 @@ class TranslatorBot(commands.Bot):
         if msg.author.bot or msg.webhook_id or not msg.guild:
             return
         
-        # Debug: Track message processing with instance ID
-        logger.info(f"DEBUG: === [BOT:{self.instance_id}] Processing message {msg.id} in channel {msg.channel.id}: '{msg.content}' ===")
-        
         await self.process_commands(msg)
         gid = str(msg.guild.id)
         cfg = self._guild_cfg(gid)
@@ -1072,36 +1052,26 @@ class TranslatorBot(commands.Bot):
         
         # Check for star patch FIRST (before updating recent message ID)
         original_content = msg.content or ""
-        logger.info(f"DEBUG: Checking for star patch in message: '{original_content}'")
         patch_result = await self._process_star_patch_if_any_with_content(original_content, msg)
         if patch_result is not None:
             patched_content, original_msg_id = patch_result
-            logger.info(f"DEBUG: Star patch detected! Patched content: '{patched_content}', original msg ID: {original_msg_id}")
         else:
             patched_content, original_msg_id = None, None
-            logger.info(f"DEBUG: No star patch detected")
         
         # Update recent message ID only after patch check
-        old_id = self._recent_user_message.get(msg.author.id)
         self._recent_user_message[msg.author.id] = msg.id
-        logger.info(f"DEBUG: Updated _recent_user_message for user {msg.author.id}: {old_id} -> {msg.id}")
         
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
-        logger.info(f"DEBUG: Original message: '{raw}'")
         # Apply preprocessing first (handles 6/666 -> 厉害 conversion)
         from preprocess import preprocess
         raw = preprocess(raw, "zh_to_en")  # Always use zh_to_en for praise number conversion
-        logger.info(f"DEBUG: After preprocessing: '{raw}'")
         raw = self._text_after_abbrev_pre(raw, gid)
-        logger.info(f"DEBUG: After abbreviations: '{raw}'")
         
         if patched_content is not None:
-            logger.info(f"DEBUG: Star patch applied, using patched content: '{patched_content}'")
             # Apply preprocessing and abbreviations to the patched result
             raw = preprocess(patched_content, "zh_to_en")
             raw = self._text_after_abbrev_pre(raw, gid)
-            logger.info(f"DEBUG: Patched content after processing: '{raw}'")
             
             # For star patches, edit existing messages instead of sending new ones
             await self._handle_star_patch_edit(raw, msg, cfg, gid, cm, original_msg_id)
@@ -1117,41 +1087,33 @@ class TranslatorBot(commands.Bot):
         
         temp_msg = TempMessage(raw, msg.attachments, msg.guild)
         if await self.is_pass_through(temp_msg):
-            logger.info(f"DEBUG: Message '{raw}' marked as pass-through")
             if is_en:
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], raw, msg, lang="Chinese")
             else:
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw, msg, lang="English")
             return
-        logger.info(f"DEBUG: Message '{raw}' will go through translation")
         txt = strip_banner(raw)
         lang = await self.detect_language(txt)
-        logger.info(f"DEBUG: Detected language: '{lang}' for text: '{txt}'")
         async def to_target(text: str, direction: str) -> str:
             tr = await self.translate_text(text, direction, cm)
             if tr == "/":
                 return text
             return tr
         if is_en:
-            logger.info(f"DEBUG: In English channel, detected language: {lang}")
             if lang == "English":
-                logger.info(f"DEBUG: English in EN channel - translating to Chinese")
                 tr = await to_target(txt, "en_to_zh")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
             elif lang == "Chinese":
-                logger.info(f"DEBUG: Chinese in EN channel - sending to both channels")
                 # Send original Chinese to Chinese channel
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
                 # Send English translation to English channel
                 tr = await to_target(txt, "zh_to_en")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             else:
-                logger.info(f"DEBUG: Meaningless in EN channel - sending to Chinese")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
         else:
             if lang == "Chinese":
                 tr = await to_target(txt, "zh_to_en")
-                logger.info(f"DEBUG: === [BOT:{self.instance_id}] SENDING ZH->EN TO EN CHANNEL: '{tr}' ===")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "English":
                 # Send original English to English channel
@@ -1212,7 +1174,6 @@ def main():
     logger.info("Starting Discord Translator Bot...")
     logger.info(f"Bot will run on {len(config.get('guilds', {}))} configured guilds")
     bot = TranslatorBot()
-    logger.info(f"Bot Instance ID: {bot.instance_id} | Start Time: {bot.start_time}")
     prompt_mod.register_commands(
         bot=bot,
         config=config,
