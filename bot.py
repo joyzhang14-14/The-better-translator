@@ -780,7 +780,7 @@ class TranslatorBot(commands.Bot):
         except Exception:
             logger.exception("Webhook send failed")
 
-    async def _process_star_patch_if_any_with_content(self, content: str, msg: discord.Message) -> Optional[str]:
+    async def _process_star_patch_if_any_with_content(self, content: str, msg: discord.Message) -> Optional[Tuple[str, int]]:
         """Process star patch using provided content instead of msg.content"""
         t = content.strip()
         
@@ -841,8 +841,8 @@ class TranslatorBot(commands.Bot):
                     fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
                     logger.info(f"DEBUG: Patch result received: '{fixed}'")
                     if fixed and fixed.strip():
-                        logger.info(f"DEBUG: Returning valid patch result: '{fixed}'")
-                        return fixed
+                        logger.info(f"DEBUG: Returning valid patch result with original msg ID: '{fixed}', {last_id}")
+                        return (fixed, last_id)  # Return both patched content and original message ID
                     else:
                         logger.error(f"DEBUG: Patch result is empty or None, returning None")
                         return None
@@ -913,8 +913,8 @@ class TranslatorBot(commands.Bot):
                     fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
                     logger.info(f"DEBUG: Patch result received: '{fixed}'")
                     if fixed and fixed.strip():
-                        logger.info(f"DEBUG: Returning valid patch result: '{fixed}'")
-                        return fixed
+                        logger.info(f"DEBUG: Returning valid patch result with original msg ID: '{fixed}', {last_id}")
+                        return (fixed, last_id)  # Return both patched content and original message ID
                     else:
                         logger.error(f"DEBUG: Patch result is empty or None, returning None")
                         return None
@@ -925,15 +925,15 @@ class TranslatorBot(commands.Bot):
                 logger.info(f"DEBUG: No base message found for star patch")
         return None
 
-    async def _handle_star_patch_edit(self, processed_content: str, msg: discord.Message, cfg: dict, gid: str, cm: dict):
+    async def _handle_star_patch_edit(self, processed_content: str, msg: discord.Message, cfg: dict, gid: str, cm: dict, original_msg_id: int):
         """Handle star patch by editing existing translated messages instead of sending new ones"""
         logger.info(f"DEBUG: Handling star patch edit for content: '{processed_content}'")
         
-        # Get the original message that this patch is based on
-        last_id = self._recent_user_message.get(msg.author.id)
-        logger.info(f"DEBUG: _recent_user_message for user {msg.author.id}: {last_id}")
+        # Use the original message ID passed from the patch processing
+        last_id = original_msg_id
+        logger.info(f"DEBUG: Using original message ID from patch processing: {last_id}")
         if not last_id:
-            logger.info("DEBUG: No previous message found for star patch edit")
+            logger.info("DEBUG: No original message ID provided for star patch edit")
             return
             
         logger.info(f"DEBUG: Looking for mirrors of original message {last_id}")
@@ -1059,14 +1059,18 @@ class TranslatorBot(commands.Bot):
         # Check for star patch FIRST (before updating recent message ID)
         original_content = msg.content or ""
         logger.info(f"DEBUG: Checking for star patch in message: '{original_content}'")
-        patched = await self._process_star_patch_if_any_with_content(original_content, msg)
-        if patched is not None:
-            logger.info(f"DEBUG: Star patch detected! Patched content: '{patched}'")
+        patch_result = await self._process_star_patch_if_any_with_content(original_content, msg)
+        if patch_result is not None:
+            patched_content, original_msg_id = patch_result
+            logger.info(f"DEBUG: Star patch detected! Patched content: '{patched_content}', original msg ID: {original_msg_id}")
         else:
+            patched_content, original_msg_id = None, None
             logger.info(f"DEBUG: No star patch detected")
         
         # Update recent message ID only after patch check
+        old_id = self._recent_user_message.get(msg.author.id)
         self._recent_user_message[msg.author.id] = msg.id
+        logger.info(f"DEBUG: Updated _recent_user_message for user {msg.author.id}: {old_id} -> {msg.id}")
         
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
@@ -1078,15 +1082,15 @@ class TranslatorBot(commands.Bot):
         raw = self._text_after_abbrev_pre(raw, gid)
         logger.info(f"DEBUG: After abbreviations: '{raw}'")
         
-        if patched is not None:
-            logger.info(f"DEBUG: Star patch applied, using patched content: '{patched}'")
+        if patched_content is not None:
+            logger.info(f"DEBUG: Star patch applied, using patched content: '{patched_content}'")
             # Apply preprocessing and abbreviations to the patched result
-            raw = preprocess(patched, "zh_to_en")
+            raw = preprocess(patched_content, "zh_to_en")
             raw = self._text_after_abbrev_pre(raw, gid)
             logger.info(f"DEBUG: Patched content after processing: '{raw}'")
             
             # For star patches, edit existing messages instead of sending new ones
-            await self._handle_star_patch_edit(raw, msg, cfg, gid, cm)
+            await self._handle_star_patch_edit(raw, msg, cfg, gid, cm, original_msg_id)
             return
         
         # Check pass-through using processed text (after potential star patch)
