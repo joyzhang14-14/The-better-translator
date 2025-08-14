@@ -809,9 +809,27 @@ class TranslatorBot(commands.Bot):
                     except Exception:
                         base = None
             if base:
-                patch_text = t[:-1]  # Remove the trailing *
-                logger.info(f"DEBUG: Applying patch '{patch_text}' to base '{base}'")
-                fixed = await self._apply_star_patch(strip_banner(base), patch_text)
+                patch_text = t[:-1].strip()  # Remove the trailing * and strip whitespace
+                base_text = base.strip()
+                
+                # Additional validation for valid patches
+                # 1. Patch content should not be empty
+                if not patch_text:
+                    logger.info(f"DEBUG: Skipping empty patch: '{t}'")
+                    return None
+                    
+                # 2. Base message should not also end with * (avoid patch chains)
+                if base_text.endswith("*"):
+                    logger.info(f"DEBUG: Skipping patch on patch: base '{base_text}' also ends with *")
+                    return None
+                    
+                # 3. Patch and base should be different
+                if patch_text == base_text:
+                    logger.info(f"DEBUG: Skipping identical patch: '{patch_text}' same as base")
+                    return None
+                
+                logger.info(f"DEBUG: Applying patch '{patch_text}' to base '{base_text}'")
+                fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
                 logger.info(f"DEBUG: Patch result: '{fixed}'")
                 return fixed
         return None
@@ -852,9 +870,27 @@ class TranslatorBot(commands.Bot):
                     except Exception:
                         base = None
             if base:
-                patch_text = t[:-1]  # Remove the trailing *
-                logger.info(f"DEBUG: Applying patch '{patch_text}' to base '{base}'")
-                fixed = await self._apply_star_patch(strip_banner(base), patch_text)
+                patch_text = t[:-1].strip()  # Remove the trailing * and strip whitespace
+                base_text = base.strip()
+                
+                # Additional validation for valid patches
+                # 1. Patch content should not be empty
+                if not patch_text:
+                    logger.info(f"DEBUG: Skipping empty patch: '{t}'")
+                    return None
+                    
+                # 2. Base message should not also end with * (avoid patch chains)
+                if base_text.endswith("*"):
+                    logger.info(f"DEBUG: Skipping patch on patch: base '{base_text}' also ends with *")
+                    return None
+                    
+                # 3. Patch and base should be different
+                if patch_text == base_text:
+                    logger.info(f"DEBUG: Skipping identical patch: '{patch_text}' same as base")
+                    return None
+                
+                logger.info(f"DEBUG: Applying patch '{patch_text}' to base '{base_text}'")
+                fixed = await self._apply_star_patch(strip_banner(base_text), patch_text)
                 logger.info(f"DEBUG: Patch result: '{fixed}'")
                 return fixed
         return None
