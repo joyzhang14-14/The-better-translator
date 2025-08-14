@@ -12,6 +12,7 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 from openai import AsyncOpenAI
+import deepl
 from PIL import Image
 import pytesseract
 from dotenv import load_dotenv
@@ -46,9 +47,13 @@ config = _load_json_or(CONFIG_PATH, {})
 # 优先使用环境变量，回退到配置文件
 config["discord_token"] = os.getenv("DISCORD_TOKEN", config.get("discord_token", ""))
 config["openai_key"] = os.getenv("OPENAI_KEY", os.getenv("OPENAI_API_KEY", config.get("openai_key", "")))
+config["deepl_key"] = "adef608f-1d8b-4831-94a2-37a6992c77d8:fx"
 
-# 初始化 OpenAI 客户端
+# 初始化 OpenAI 客户端 (仍用于判断功能)
 openai_client = AsyncOpenAI(api_key=config["openai_key"]) if config.get("openai_key") else None
+
+# 初始化 DeepL 客户端 (用于翻译功能)
+deepl_client = deepl.Translator(config["deepl_key"])
 
 # 启动时打一条掩码日志，确认进程里确实拿到了 key
 if config.get("openai_key"):
@@ -56,6 +61,12 @@ if config.get("openai_key"):
     logger.info(f"OpenAI API Key loaded: {mask}")
 else:
     logger.error("MISSING: OpenAI API Key not found!")
+
+if config.get("deepl_key"):
+    mask_deepl = config["deepl_key"][:4] + "..." + config["deepl_key"][-4:]
+    logger.info(f"DeepL API Key loaded: {mask_deepl}")
+else:
+    logger.error("MISSING: DeepL API Key not found!")
 
 if config.get("discord_token"):
     mask_token = config["discord_token"][:10] + "..." + config["discord_token"][-10:]
@@ -591,26 +602,34 @@ class TranslatorBot(commands.Bot):
         if not src_text:
             logger.info("DEBUG: Empty src_text, returning /")
             return "/"
-        if tgt_lang.startswith("Chinese"):
-            sys = "你是一个严格的翻译引擎。只输出译文本身，不要解释、不要引号、不要添加多余词语。如果确实无法翻译，请只输出一个斜杠"/"。"
-        else:
-            sys = "You are a strict translation engine. Output only the translated text with no quotes or extra words. If translation is impossible, output exactly a single slash (/)."
-        usr = f"Source language: {src_lang}\nTarget language: {tgt_lang}\nText between <text> tags:\n<text>{src_text}</text>"
+        
         try:
-            if not self.openai_client:
-                logger.error("OpenAI client not initialized - translation failed")
+            # Map language names to DeepL language codes
+            if src_lang == "Chinese":
+                source_lang = "ZH"
+            elif src_lang == "English":
+                source_lang = "EN"
+            else:
+                source_lang = None  # Let DeepL auto-detect
+            
+            if tgt_lang.startswith("Chinese"):
+                target_lang = "ZH"
+            elif tgt_lang == "English":
+                target_lang = "EN-US"
+            else:
+                logger.error(f"Unsupported target language: {tgt_lang}")
                 return "/"
-            logger.info(f"DEBUG: Calling OpenAI API...")
-            r = await self.openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
-                temperature=0.2
+            
+            logger.info(f"DEBUG: Calling DeepL API with source={source_lang}, target={target_lang}")
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: deepl_client.translate_text(src_text, target_lang=target_lang, source_lang=source_lang)
             )
-            out = (r.choices[0].message.content or "").strip()
-            logger.info(f"DEBUG: OpenAI returned: '{out}'")
+            out = result.text.strip()
+            logger.info(f"DEBUG: DeepL returned: '{out}'")
             return out or "/"
         except Exception as e:
-            logger.error(f"OpenAI translation failed: {e}")
+            logger.error(f"DeepL translation failed: {e}")
             return "/"
 
     async def translate_text(self, text: str, direction: str, custom_map: dict) -> str:
