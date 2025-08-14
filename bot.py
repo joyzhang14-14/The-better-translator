@@ -1044,6 +1044,9 @@ class TranslatorBot(commands.Bot):
         if msg.author.bot or msg.webhook_id or not msg.guild:
             return
         
+        # Debug: Track message processing
+        logger.info(f"DEBUG: === Processing message {msg.id} in channel {msg.channel.id}: '{msg.content}' ===")
+        
         await self.process_commands(msg)
         gid = str(msg.guild.id)
         cfg = self._guild_cfg(gid)
@@ -1094,8 +1097,14 @@ class TranslatorBot(commands.Bot):
             return
         
         # Check pass-through using processed text (after potential star patch)
-        temp_msg = msg  # Create a temporary message object with processed content
-        temp_msg.content = raw
+        # Create a simple object with the required attributes
+        class TempMessage:
+            def __init__(self, content, attachments, guild):
+                self.content = content
+                self.attachments = attachments
+                self.guild = guild
+        
+        temp_msg = TempMessage(raw, msg.attachments, msg.guild)
         if await self.is_pass_through(temp_msg):
             logger.info(f"DEBUG: Message '{raw}' marked as pass-through")
             if is_en:
@@ -1120,9 +1129,10 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
             elif lang == "Chinese":
                 logger.info(f"DEBUG: Chinese in EN channel - sending to both channels")
+                # Send original Chinese to Chinese channel
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
+                # Send English translation to English channel
                 tr = await to_target(txt, "zh_to_en")
-                logger.info(f"DEBUG: Translated '{txt}' to '{tr}' for English channel")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             else:
                 logger.info(f"DEBUG: Meaningless in EN channel - sending to Chinese")
@@ -1130,9 +1140,14 @@ class TranslatorBot(commands.Bot):
         else:
             if lang == "Chinese":
                 tr = await to_target(txt, "zh_to_en")
+                logger.info(f"DEBUG: === SENDING ZH->EN TO EN CHANNEL: '{tr}' ===")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "English":
+                # Send original English to English channel
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
+                # Send Chinese translation to Chinese channel
+                zh_tr = await to_target(txt, "en_to_zh")
+                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
             else:
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
 
@@ -1142,6 +1157,7 @@ class TranslatorBot(commands.Bot):
         gid = after.guild.id
         neighbors = self._mirror_neighbors(gid, after.id)
         if not neighbors:
+            # No existing mirrors, this shouldn't be processed as edit
             return
         txt = strip_banner(after.content or "")
         for ch_id, mid in list(neighbors.items()):
@@ -1154,14 +1170,13 @@ class TranslatorBot(commands.Bot):
                     pass
             except Exception:
                 continue
+        # After deleting old mirrors, regenerate translations for the edited message
         cfg = self._guild_cfg(str(gid))
         if not cfg:
             return
-        fake = after
-        if after.channel.id == cfg["en_channel_id"]:
-            await self.on_message(fake)
-        elif after.channel.id == cfg["zh_channel_id"]:
-            await self.on_message(fake)
+        # Process the edited message as a new message to create updated translations
+        if after.channel.id in [cfg["en_channel_id"], cfg["zh_channel_id"]]:
+            await self.on_message(after)
 
     async def on_message_delete(self, msg: discord.Message):
         if msg.author.bot or msg.webhook_id or not msg.guild:
