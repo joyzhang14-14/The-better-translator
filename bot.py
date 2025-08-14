@@ -883,7 +883,18 @@ class TranslatorBot(commands.Bot):
         logger.info(f"DEBUG: After preprocessing: '{raw}'")
         raw = self._text_after_abbrev_pre(raw, gid)
         logger.info(f"DEBUG: After abbreviations: '{raw}'")
-        # Check pass-through using preprocessed text, not original message
+        
+        # Check for star patch FIRST using original message content (before preprocessing)
+        original_content = msg.content or ""
+        patched = await self._process_star_patch_if_any_with_content(original_content, msg)
+        if patched is not None:
+            logger.info(f"DEBUG: Star patch applied, using patched content: '{patched}'")
+            # Apply preprocessing and abbreviations to the patched result
+            raw = preprocess(patched, "zh_to_en")
+            raw = self._text_after_abbrev_pre(raw, gid)
+            logger.info(f"DEBUG: Patched content after processing: '{raw}'")
+        
+        # Check pass-through using processed text (after potential star patch)
         temp_msg = msg  # Create a temporary message object with processed content
         temp_msg.content = raw
         if await self.is_pass_through(temp_msg):
@@ -894,15 +905,6 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw, msg, lang="English")
             return
         logger.info(f"DEBUG: Message '{raw}' will go through translation")
-        # Check for star patch using original message content (before preprocessing)
-        original_content = msg.content or ""
-        patched = await self._process_star_patch_if_any_with_content(original_content, msg)
-        if patched is not None:
-            logger.info(f"DEBUG: Star patch applied, using patched content: '{patched}'")
-            # Apply preprocessing and abbreviations to the patched result
-            raw = preprocess(patched, "zh_to_en")
-            raw = self._text_after_abbrev_pre(raw, gid)
-            logger.info(f"DEBUG: Patched content after processing: '{raw}'")
         txt = strip_banner(raw)
         lang = await self.detect_language(txt)
         logger.info(f"DEBUG: Detected language: '{lang}' for text: '{txt}'")
