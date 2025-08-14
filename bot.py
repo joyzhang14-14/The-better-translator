@@ -163,10 +163,16 @@ def _delink_for_reply(s: str) -> str:
     return s
 
 def _is_command_text(gid: str, s: str) -> bool:
-    cmds = _merge_default(passthrough_cfg, gid).get("commands", [])
     if not s:
         return False
     t = s.strip()
+    
+    # Check if it's a Discord bot command (starts with !)
+    if t.startswith("!"):
+        return True
+    
+    # Check configured passthrough commands
+    cmds = _merge_default(passthrough_cfg, gid).get("commands", [])
     for c in cmds:
         if t.lower().startswith(c.lower()):
             return True
