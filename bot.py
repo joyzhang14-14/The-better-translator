@@ -614,6 +614,123 @@ class TranslatorBot(commands.Bot):
     def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
         return _apply_abbreviations(s or "", gid)
 
+    async def _handle_image_ocr(self, msg: discord.Message, cfg: dict, gid: str, cm: dict, is_en: bool, is_zh: bool) -> bool:
+        """Handle OCR processing for image attachments with complex translation logic"""
+        # Check if message has image attachments
+        image_attachments = [att for att in msg.attachments if is_image_attachment(att)]
+        if not image_attachments:
+            return False
+        
+        for att in image_attachments:
+            try:
+                # Read image data
+                data = await att.read()
+                img = Image.open(BytesIO(data))
+                text = pytesseract.image_to_string(img, lang="chi_sim+eng").strip()
+                
+                if not text:
+                    continue
+                
+                # Detect language of extracted text
+                ocr_lang = await self.detect_language(text)
+                
+                # Determine source channel
+                if is_zh:  # Message sent in Chinese channel
+                    await self._process_zh_channel_image(msg, cfg, cm, text, ocr_lang, att)
+                elif is_en:  # Message sent in English channel
+                    await self._process_en_channel_image(msg, cfg, cm, text, ocr_lang, att)
+                    
+            except Exception:
+                logger.exception("OCR processing failed for an attachment")
+                continue
+        
+        return True  # Processed image(s), don't continue with normal text processing
+    
+    async def _process_zh_channel_image(self, msg: discord.Message, cfg: dict, cm: dict, text: str, ocr_lang: str, att: discord.Attachment):
+        """Process image sent in Chinese channel"""
+        if ocr_lang == "Chinese":
+            # Chinese text in Chinese channel -> translate to English + image to English channel
+            en_tr = await self.translate_text(text, "zh_to_en", cm)
+            en_content = f"Image text translation is:\n{en_tr}"
+            await self._send_image_with_text(cfg["en_webhook_url"], cfg["en_channel_id"], en_content, msg, att, "English")
+            
+        elif ocr_lang == "English":
+            # English text in Chinese channel -> translate to Chinese + image to Chinese channel, original to English channel
+            zh_tr = await self.translate_text(text, "en_to_zh", cm)
+            zh_content = f"图片中文字的翻译为：\n{zh_tr}"
+            await self._send_image_with_text(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_content, msg, att, "Chinese")
+            
+            # Also send original to English channel
+            en_content = f"Image text translation is:\n{text}"
+            await self._send_image_with_text(cfg["en_webhook_url"], cfg["en_channel_id"], en_content, msg, att, "English")
+            
+        else:  # Mixed language
+            # Mixed text -> translate to both channels
+            zh_tr = await self.translate_text(text, "en_to_zh", cm)  # Assume mixed = primarily English
+            en_tr = await self.translate_text(text, "zh_to_en", cm)  # Assume mixed = primarily Chinese
+            
+            zh_content = f"图片中文字的翻译为：\n{zh_tr}"
+            await self._send_image_with_text(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_content, msg, att, "Chinese")
+            
+            en_content = f"Image text translation is:\n{en_tr}"
+            await self._send_image_with_text(cfg["en_webhook_url"], cfg["en_channel_id"], en_content, msg, att, "English")
+    
+    async def _process_en_channel_image(self, msg: discord.Message, cfg: dict, cm: dict, text: str, ocr_lang: str, att: discord.Attachment):
+        """Process image sent in English channel"""
+        if ocr_lang == "English":
+            # English text in English channel -> translate to Chinese + image to Chinese channel
+            zh_tr = await self.translate_text(text, "en_to_zh", cm)
+            zh_content = f"图片中文字的翻译为：\n{zh_tr}"
+            await self._send_image_with_text(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_content, msg, att, "Chinese")
+            
+        elif ocr_lang == "Chinese":
+            # Chinese text in English channel -> translate to English + image to English channel, original to Chinese channel  
+            en_tr = await self.translate_text(text, "zh_to_en", cm)
+            en_content = f"Image text translation is:\n{en_tr}"
+            await self._send_image_with_text(cfg["en_webhook_url"], cfg["en_channel_id"], en_content, msg, att, "English")
+            
+            # Also send original to Chinese channel
+            zh_content = f"图片中文字的翻译为：\n{text}"
+            await self._send_image_with_text(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_content, msg, att, "Chinese")
+            
+        else:  # Mixed language
+            # Mixed text -> translate to both channels
+            zh_tr = await self.translate_text(text, "en_to_zh", cm)
+            en_tr = await self.translate_text(text, "zh_to_en", cm)
+            
+            zh_content = f"图片中文字的翻译为：\n{zh_tr}"
+            await self._send_image_with_text(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_content, msg, att, "Chinese")
+            
+            en_content = f"Image text translation is:\n{en_tr}"
+            await self._send_image_with_text(cfg["en_webhook_url"], cfg["en_channel_id"], en_content, msg, att, "English")
+    
+    async def _send_image_with_text(self, webhook_url: str, target_channel_id: int, content: str, msg: discord.Message, att: discord.Attachment, lang: str):
+        """Send text content with image attachment via webhook"""
+        if not self.session:
+            raise RuntimeError("HTTP session not initialized")
+        
+        wh = discord.Webhook.from_url(webhook_url, session=self.session)
+        
+        try:
+            # Read image data
+            data = await att.read()
+            
+            sent = await wh.send(
+                content=content,
+                username=msg.author.display_name,
+                avatar_url=(msg.author.avatar.url if msg.author.avatar else None),
+                files=[discord.File(fp=BytesIO(data), filename=att.filename)],
+                allowed_mentions=self.no_ping,
+                wait=True,
+            )
+            
+            if isinstance(sent, (discord.Message, discord.WebhookMessage)):
+                self._mirror_add(msg.guild.id, msg.id, target_channel_id, int(sent.id))
+                self._mirror_add(msg.guild.id, int(sent.id), msg.channel.id, msg.id)
+                
+        except Exception:
+            logger.exception("Failed to send image with text via webhook")
+
     async def is_pass_through(self, msg: discord.Message) -> bool:
         t = (msg.content or "")
         t2 = CUSTOM_EMOJI_RE.sub("", t)
@@ -685,39 +802,6 @@ class TranslatorBot(commands.Bot):
             except Exception:
                 logger.exception("read attachment failed")
 
-        ocr_lines: List[str] = []
-        for fn, data in files_data:
-            try:
-                img = Image.open(BytesIO(data))
-                text = pytesseract.image_to_string(img, lang="chi_sim+eng").strip()
-                if not text:
-                    continue
-                gid_str = str(msg.guild.id)
-                cm = guild_dicts.get(gid_str, {})
-                ocr_lang = await self.detect_language(text)
-                
-                # Follow the translation logic based on target language
-                if lang == "Chinese":  # Target is Chinese channel
-                    if ocr_lang == "English":
-                        # English image text -> translate to Chinese for Chinese channel
-                        ocr_tr = await self.translate_text(text, "en_to_zh", cm)
-                    else:
-                        # Chinese or other -> keep original for Chinese channel
-                        ocr_tr = text
-                elif lang == "English":  # Target is English channel
-                    if ocr_lang == "Chinese":
-                        # Chinese image text -> translate to English for English channel
-                        ocr_tr = await self.translate_text(text, "zh_to_en", cm)
-                    else:
-                        # English or other -> keep original for English channel
-                        ocr_tr = text
-                else:
-                    ocr_tr = text
-                
-                if ocr_tr and ocr_tr != "/" and ocr_tr.strip():
-                    ocr_lines.append("Image text translation: " + ocr_tr)
-            except Exception:
-                logger.exception("OCR failed for an attachment")
 
         top_banner = ""
         ref = await self._get_ref_message(msg)
@@ -735,8 +819,6 @@ class TranslatorBot(commands.Bot):
             final_lines.append(top_banner)
         if body:
             final_lines.append(body)
-        if ocr_lines:
-            final_lines.extend(ocr_lines)
         final = "\n".join(final_lines)
 
         try:
@@ -1067,6 +1149,10 @@ class TranslatorBot(commands.Bot):
                 self.content = content
                 self.attachments = attachments
                 self.guild = guild
+        
+        # Check for image attachments and handle OCR
+        if await self._handle_image_ocr(msg, cfg, gid, cm, is_en, is_zh):
+            return
         
         temp_msg = TempMessage(raw, msg.attachments, msg.guild)
         if await self.is_pass_through(temp_msg):
