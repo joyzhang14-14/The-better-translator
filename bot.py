@@ -659,6 +659,32 @@ class TranslatorBot(commands.Bot):
             show = raw
         return jump, show, False
 
+    async def _get_original_author(self, ref: discord.Message) -> discord.User:
+        """Get the original author of a message, handling webhook messages by finding the original message via mirror mapping"""
+        # If it's not a webhook message, return the original author
+        if not ref.webhook_id:
+            return ref.author
+        
+        # If it's a webhook message, try to find the original message through mirror mapping
+        try:
+            gid = ref.guild.id if ref.guild else 0
+            neighbors = self._mirror_neighbors(gid, ref.id)
+            
+            # Look through all mirror mappings to find the original message
+            for channel_id, message_id in neighbors.items():
+                try:
+                    original_msg = await self._fetch_message(ref.guild, channel_id, message_id)
+                    if original_msg and not original_msg.webhook_id:
+                        # Found the original non-webhook message
+                        return original_msg.author
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        
+        # Fallback to webhook author if we can't find the original
+        return ref.author
+
     async def _make_top_reply_banner(self, ref: discord.Message, target_lang: str, target_channel_id: int) -> str:
         reply_label = REPLY_LABEL_ZH if target_lang == "Chinese" else REPLY_LABEL_EN
         reply_icon = REPLY_ICON_DEFAULT
@@ -668,7 +694,9 @@ class TranslatorBot(commands.Bot):
         preview = re.sub(r"\s+", " ", preview).strip()
         preview = _delink_for_reply(preview)
         preview = _shorten(preview, REPLY_PREVIEW_LIMIT)
-        return f"> {ref.author.mention} {reply_icon} [{reply_label}]({jump}) {preview}".rstrip()
+        # Get the original author (handles webhook messages)
+        original_author = await self._get_original_author(ref)
+        return f"> {original_author.mention} {reply_icon} [{reply_label}]({jump}) {preview}".rstrip()
 
     async def send_via_webhook(self, webhook_url: str, target_channel_id: int, content: str, msg: discord.Message, *, lang: str):
         if not self.session:
