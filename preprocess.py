@@ -87,7 +87,7 @@ def has_bao_de_pattern(text: str) -> bool:
         return False
     return bool(_PAT_BAO_DE_SENT.search(text.strip()))
 
-def preprocess(text: str, direction: str) -> str:
+def preprocess(text: str, direction: str, skip_bao_de: bool = False) -> str:
     s = text or ""
     
     # Handle praise numbers for both directions 
@@ -97,7 +97,8 @@ def preprocess(text: str, direction: str) -> str:
     # Only apply Chinese-specific preprocessing for zh_to_en direction
     if direction == "zh_to_en":
         s = _rewrite_learned_from(s)
-        s = _encode_bao_de(s)
+        if not skip_bao_de:
+            s = _encode_bao_de(s)
         if not s.startswith(FSURE_HEAD):
             s = _which_choose_disamb(s)
     return s

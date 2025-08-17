@@ -595,13 +595,17 @@ class TranslatorBot(commands.Bot):
         if direction == "zh_to_en":
             # Check if text contains '包的' pattern that might need GPT judgment
             original_text = _apply_dictionary(text, "zh_to_en", custom_map)
+            gpt_processed = False
             if has_bao_de_pattern(original_text):
                 gpt_result = await self._gpt_judge_bao_de(original_text)
                 if gpt_result != "NOT_FOR_SURE":
                     # GPT determined this is "for sure" meaning and provided translation
                     return gpt_result
+                else:
+                    # GPT determined this is NOT "for sure", skip normal 包的 processing
+                    gpt_processed = True
             
-            pre = preprocess(original_text, "zh_to_en")
+            pre = preprocess(original_text, "zh_to_en", skip_bao_de=gpt_processed)
             if pre.startswith(FSURE_HEAD):
                 payload = pre[len(FSURE_HEAD):]
                 if FSURE_SEP in payload:
@@ -625,10 +629,11 @@ class TranslatorBot(commands.Bot):
         """Use GPT to judge if '包的' in text means 'for sure' and translate accordingly"""
         sys = (
             "You are a Chinese to English translator. Analyze the Chinese text and determine if any instance of '包的' "
-            "in the text means 'for sure' (expressing certainty/guarantee) rather than 'bag' (物理包裹). "
-            "If '包的' means 'for sure', translate the entire sentence naturally with this meaning. "
-            "If '包的' means 'bag' or if there's no '包的', return 'NOT_FOR_SURE' exactly. "
-            "Only return the English translation if you're confident '包的' means 'for sure'."
+            "means 'for sure' (expressing certainty/guarantee) rather than referring to a physical bag. "
+            "Common patterns that mean 'for sure': 包赢的, 包过的, 包好的, 包准的, 包成的, etc. "
+            "If '包的' expresses certainty/guarantee, translate the entire sentence naturally. "
+            "If '包的' refers to a bag/package or if there's no clear '包的' pattern, return 'NOT_FOR_SURE' exactly. "
+            "Examples: '包赢的' = guaranteed win, '包好的' = guaranteed good, '包过的' = guaranteed pass."
         )
         usr = f"Chinese text: {text}"
         
