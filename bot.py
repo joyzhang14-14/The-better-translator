@@ -371,14 +371,12 @@ class TranslatorBot(commands.Bot):
         await self.wait_until_ready()
 
     def _mirror_add(self, gid: int, src_id: int, ch_id: int, mapped_id: int):
-        logger.info(f"DEBUG: Adding mirror mapping: guild {gid}, src {src_id} -> channel {ch_id}, message {mapped_id}")
         self.mirror_map.setdefault(gid, {}).setdefault(src_id, {})[ch_id] = mapped_id
         self._mirror_prune(gid)
         self._mirror_save()
 
     def _mirror_neighbors(self, gid: int, src_id: int) -> Dict[int, int]:
         neighbors = self.mirror_map.get(gid, {}).get(src_id, {})
-        logger.info(f"DEBUG: _mirror_neighbors for guild {gid}, message {src_id}: {neighbors}")
         return neighbors
 
     def _find_mirror_id(self, gid: int, src_msg_id: int, target_channel_id: int) -> Optional[int]:
@@ -714,44 +712,31 @@ class TranslatorBot(commands.Bot):
 
     async def _get_original_author(self, ref: discord.Message) -> discord.User:
         """Get the original author of a message, handling webhook messages by finding the original message via mirror mapping"""
-        logger.info(f"DEBUG: _get_original_author called for message {ref.id}, webhook_id: {ref.webhook_id}, author: {ref.author}")
-        
         # If it's not a webhook message, return the original author
         if not ref.webhook_id:
-            logger.info(f"DEBUG: Not a webhook message, returning original author: {ref.author}")
             return ref.author
         
         # If it's a webhook message, try to find the original message through mirror mapping
         try:
             gid = ref.guild.id if ref.guild else 0
             neighbors = self._mirror_neighbors(gid, ref.id)
-            logger.info(f"DEBUG: Found {len(neighbors)} neighbors for webhook message {ref.id}: {neighbors}")
             
             # Look through all mirror mappings to find the original message
             for channel_id, message_id in neighbors.items():
                 try:
-                    logger.info(f"DEBUG: Checking mirror message {message_id} in channel {channel_id}")
                     original_msg = await self._fetch_message(ref.guild, channel_id, message_id)
-                    if original_msg:
-                        logger.info(f"DEBUG: Found mirror message {original_msg.id}, webhook_id: {original_msg.webhook_id}, author: {original_msg.author}")
-                        if not original_msg.webhook_id:
-                            # Found the original non-webhook message
-                            logger.info(f"DEBUG: Found original author: {original_msg.author}")
-                            return original_msg.author
-                    else:
-                        logger.info(f"DEBUG: Could not fetch mirror message {message_id}")
-                except Exception as e:
-                    logger.error(f"DEBUG: Error fetching mirror message {message_id}: {e}")
+                    if original_msg and not original_msg.webhook_id:
+                        # Found the original non-webhook message
+                        return original_msg.author
+                except Exception:
                     continue
             
             # Alternative approach: search all mirror mappings in the guild to find where this webhook message is referenced
-            logger.info(f"DEBUG: Trying reverse lookup for webhook message {ref.id}")
             guild_mirrors = self.mirror_map.get(gid, {})
             for src_msg_id, channel_mappings in guild_mirrors.items():
                 for ch_id, mapped_msg_id in channel_mappings.items():
                     if mapped_msg_id == ref.id:
                         # Found the source message that created this webhook message
-                        logger.info(f"DEBUG: Found source mapping: {src_msg_id} -> {ref.id}")
                         try:
                             # Try to fetch the original source message (should be non-webhook)
                             # We need to find which channel the source message is in
@@ -760,26 +745,23 @@ class TranslatorBot(commands.Bot):
                                 if source_ch_id != ref.channel.id:  # Different channel
                                     source_msg = await self._fetch_message(ref.guild, source_ch_id, src_msg_id)
                                     if source_msg and not source_msg.webhook_id:
-                                        logger.info(f"DEBUG: Found original author via reverse lookup: {source_msg.author}")
                                         return source_msg.author
                             
                             # If no different channel found, try the source message directly
                             if src_msg_id != ref.id:  # Avoid infinite loop
                                 source_msg = await self._fetch_message(ref.guild, ch_id, src_msg_id)
                                 if source_msg and not source_msg.webhook_id:
-                                    logger.info(f"DEBUG: Found original author via direct lookup: {source_msg.author}")
                                     return source_msg.author
-                        except Exception as e:
-                            logger.error(f"DEBUG: Error fetching source message {src_msg_id}: {e}")
+                        except Exception:
+                            continue
                             
-        except Exception as e:
-            logger.error(f"DEBUG: Error in _get_original_author: {e}")
+        except Exception:
+            pass
         
         # Fallback to webhook author if we can't find the original
-        logger.info(f"DEBUG: Fallback to webhook author: {ref.author}")
         return ref.author
 
-    async def _make_top_reply_banner(self, ref: discord.Message, target_lang: str, target_channel_id: int) -> str:
+    async def _make_top_reply_banner(self, ref: discord.Message, target_lang: str, target_channel_id: int, original_author: discord.User = None) -> str:
         reply_label = REPLY_LABEL_ZH if target_lang == "Chinese" else REPLY_LABEL_EN
         reply_icon = REPLY_ICON_DEFAULT
         jump, preview, only_image = await self._choose_jump_and_preview(ref, target_lang, target_channel_id)
@@ -788,8 +770,9 @@ class TranslatorBot(commands.Bot):
         preview = re.sub(r"\s+", " ", preview).strip()
         preview = _delink_for_reply(preview)
         preview = _shorten(preview, REPLY_PREVIEW_LIMIT)
-        # Get the original author (handles webhook messages)
-        original_author = await self._get_original_author(ref)
+        # Get the original author (prefer passed parameter, fallback to discovery)
+        if original_author is None:
+            original_author = await self._get_original_author(ref)
         return f"> {original_author.mention} {reply_icon} [{reply_label}]({jump}) {preview}".rstrip()
 
     async def send_via_webhook(self, webhook_url: str, target_channel_id: int, content: str, msg: discord.Message, *, lang: str):
@@ -810,7 +793,28 @@ class TranslatorBot(commands.Bot):
         ref = await self._get_ref_message(msg)
         if ref is not None:
             try:
-                top_banner = await self._make_top_reply_banner(ref, lang, target_channel_id)
+                # For replies, we need to find the original author of the referenced message
+                # If ref is a webhook message, we need to find who originally sent it
+                ref_original_author = None
+                if ref.webhook_id:
+                    # The referenced message is a webhook message, so we need to find its original author
+                    ref_original_author = await self._get_original_author(ref)
+                    # If we can't find the original author, try to create a user-like object from webhook info
+                    if ref_original_author == ref.author and hasattr(ref, 'author') and hasattr(ref.author, 'display_name'):
+                        logger.info(f"Could not find original author for webhook message {ref.id}, using display name: {ref.author.display_name}")
+                        # Create a simple user-like object for mention purposes
+                        # Note: This will still show as @unknown user but with the right display name
+                        class WebhookUser:
+                            def __init__(self, display_name):
+                                self.display_name = display_name
+                                self.mention = f"**{display_name}**"  # Bold display name instead of mention
+                        
+                        ref_original_author = WebhookUser(ref.author.display_name)
+                else:
+                    # The referenced message is a regular user message
+                    ref_original_author = ref.author
+                
+                top_banner = await self._make_top_reply_banner(ref, lang, target_channel_id, ref_original_author)
             except Exception:
                 logger.exception("build top reply banner failed")
 
