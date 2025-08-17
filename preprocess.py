@@ -15,7 +15,7 @@ _PAT_MODEL_ON = re.compile(r"(?:照着|照|按|依照|参考|借鉴|仿照|模�
 _PAT_COPY = re.compile(r"(?:抄自|抄)(.{1,18}?)(?:的(?:功能|做法|方案|点子|思路)?)?", re.I)
 
 _PAT_BAO_DE_SENT = re.compile(
-    r"^(?:\s*)包(.*?)的",
+    r"(?:^|[^a-zA-Z\u4e00-\u9fff])包.*?的",
     re.I,
 )
 
@@ -53,19 +53,39 @@ def _convert_praise_numbers(s: str) -> str:
     return s
 
 def _encode_bao_de(s: str) -> str:
-    m = _PAT_BAO_DE_SENT.match(s.strip())
+    s_stripped = s.strip()
+    m = _PAT_BAO_DE_SENT.search(s_stripped)
     if not m:
         return s
-    core = (m.group(1) or "").strip()
-    if not core:
+    
+    # Extract the matched "包...的" pattern
+    matched_text = m.group(0)
+    # Find where "包" starts in the matched text (skip prefix punctuation/space)
+    bao_start = matched_text.find("包")
+    if bao_start == -1:
         return s
-    # Extract content between 包 and 的, will add "for sure" after translation
-    # Get any remaining text after "的"
-    remaining = s.strip()[m.end():].strip()
+    
+    # Extract content between 包 and 的
+    bao_de_part = matched_text[bao_start:]  # "包...的"
+    if len(bao_de_part) < 3:  # At least "包X的"
+        return s
+    
+    core = bao_de_part[1:-1]  # Remove "包" and "的"
+    if not core.strip():
+        return s
+    
+    # Get any remaining text after the matched pattern
+    remaining = s_stripped[m.end():].strip()
     if remaining:
         return FSURE_HEAD + core + FSURE_SEP + remaining
     else:
         return FSURE_HEAD + core + FSURE_SEP
+
+def has_bao_de_pattern(text: str) -> bool:
+    """Check if text contains '包的' pattern that might need GPT judgment"""
+    if not text:
+        return False
+    return bool(_PAT_BAO_DE_SENT.search(text.strip()))
 
 def preprocess(text: str, direction: str) -> str:
     s = text or ""

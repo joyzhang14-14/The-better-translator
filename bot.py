@@ -15,7 +15,7 @@ from openai import AsyncOpenAI
 import deepl
 from dotenv import load_dotenv
 
-from preprocess import preprocess, FSURE_HEAD, FSURE_SEP
+from preprocess import preprocess, FSURE_HEAD, FSURE_SEP, has_bao_de_pattern
 import joy_cmds as prompt_mod
 import health_server
 from storage import storage
@@ -593,7 +593,15 @@ class TranslatorBot(commands.Bot):
             return await self._translate_with_context(text, direction, custom_map, context)
         
         if direction == "zh_to_en":
-            pre = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
+            # Check if text contains '包的' pattern that might need GPT judgment
+            original_text = _apply_dictionary(text, "zh_to_en", custom_map)
+            if has_bao_de_pattern(original_text):
+                gpt_result = await self._gpt_judge_bao_de(original_text)
+                if gpt_result != "NOT_FOR_SURE":
+                    # GPT determined this is "for sure" meaning and provided translation
+                    return gpt_result
+            
+            pre = preprocess(original_text, "zh_to_en")
             if pre.startswith(FSURE_HEAD):
                 payload = pre[len(FSURE_HEAD):]
                 if FSURE_SEP in payload:
@@ -612,6 +620,33 @@ class TranslatorBot(commands.Bot):
         else:
             pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
             return await self._call_translate(pre, "English", "Chinese (Simplified)")
+
+    async def _gpt_judge_bao_de(self, text: str) -> str:
+        """Use GPT to judge if '包的' in text means 'for sure' and translate accordingly"""
+        sys = (
+            "You are a Chinese to English translator. Analyze the Chinese text and determine if any instance of '包的' "
+            "in the text means 'for sure' (expressing certainty/guarantee) rather than 'bag' (物理包裹). "
+            "If '包的' means 'for sure', translate the entire sentence naturally with this meaning. "
+            "If '包的' means 'bag' or if there's no '包的', return 'NOT_FOR_SURE' exactly. "
+            "Only return the English translation if you're confident '包的' means 'for sure'."
+        )
+        usr = f"Chinese text: {text}"
+        
+        try:
+            if not self.openai_client:
+                return "NOT_FOR_SURE"
+                
+            r = await self.openai_client.chat.completions.create(
+                model="gpt-5-mini", 
+                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
+                temperature=0.0
+            )
+            result = (r.choices[0].message.content or "").strip()
+            logger.info(f"GPT bao_de judgment result: '{result}' for text: '{text}'")
+            return result
+        except Exception as e:
+            logger.error(f"GPT bao_de judgment failed: {e}")
+            return "NOT_FOR_SURE"
 
     async def _translate_with_context(self, text: str, direction: str, custom_map: dict, context: str) -> str:
         """Translate text with context for better accuracy in replies"""
