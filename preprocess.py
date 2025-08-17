@@ -37,8 +37,6 @@ def _rewrite_learned_from(s: str) -> str:
         s = s2
     return s
 
-def _inject_comma_after_le(s: str) -> str:
-    return re.sub(r"了(?!$)(?![\s，。！？；：、,.!?])", "了，", s)
 
 def _which_choose_disamb(s: str) -> str:
     if len(s) > 24:
@@ -81,6 +79,5 @@ def preprocess(text: str, direction: str) -> str:
         s = _rewrite_learned_from(s)
         s = _encode_bao_de(s)
         if not s.startswith(FSURE_HEAD):
-            s = _inject_comma_after_le(s)
             s = _which_choose_disamb(s)
     return s
