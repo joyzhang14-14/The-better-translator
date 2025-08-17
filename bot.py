@@ -658,8 +658,20 @@ class TranslatorBot(commands.Bot):
         try:
             # Apply preprocessing to both context and text
             if direction == "zh_to_en":
+                # Check if text contains '包的' pattern that might need GPT judgment
+                text_dict_applied = _apply_dictionary(text, "zh_to_en", custom_map)
+                gpt_processed = False
+                if has_bao_de_pattern(text_dict_applied):
+                    gpt_result = await self._gpt_judge_bao_de(text_dict_applied)
+                    if gpt_result != "NOT_FOR_SURE":
+                        # GPT determined this is "for sure" meaning and provided translation
+                        return gpt_result
+                    else:
+                        # GPT determined this is NOT "for sure", skip normal 包的 processing
+                        gpt_processed = True
+                
                 context_processed = preprocess(_apply_dictionary(context, "zh_to_en", custom_map), "zh_to_en")
-                text_processed = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
+                text_processed = preprocess(text_dict_applied, "zh_to_en", skip_bao_de=gpt_processed)
                 src_lang = "Chinese"
                 tgt_lang = "English"
             else:
@@ -691,9 +703,18 @@ class TranslatorBot(commands.Bot):
                 
         except Exception as e:
             logger.error(f"Context translation failed: {e}")
-            # Fallback to normal translation
+            # Fallback to normal translation with GPT judgment
             if direction == "zh_to_en":
-                pre = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
+                # Apply same GPT judgment logic as in main translate_text function
+                text_dict_applied = _apply_dictionary(text, "zh_to_en", custom_map)
+                gpt_processed = False
+                if has_bao_de_pattern(text_dict_applied):
+                    gpt_result = await self._gpt_judge_bao_de(text_dict_applied)
+                    if gpt_result != "NOT_FOR_SURE":
+                        return gpt_result
+                    else:
+                        gpt_processed = True
+                pre = preprocess(text_dict_applied, "zh_to_en", skip_bao_de=gpt_processed)
                 return await self._call_translate(pre, "Chinese", "English")
             else:
                 pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
