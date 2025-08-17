@@ -586,7 +586,11 @@ class TranslatorBot(commands.Bot):
             logger.error(f"DeepL translation failed: {e}")
             return "/"
 
-    async def translate_text(self, text: str, direction: str, custom_map: dict) -> str:
+    async def translate_text(self, text: str, direction: str, custom_map: dict, context: str = None) -> str:
+        # Handle context-aware translation for replies
+        if context:
+            return await self._translate_with_context(text, direction, custom_map, context)
+        
         if direction == "zh_to_en":
             pre = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
             if pre.startswith(FSURE_HEAD):
@@ -607,6 +611,52 @@ class TranslatorBot(commands.Bot):
         else:
             pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
             return await self._call_translate(pre, "English", "Chinese (Simplified)")
+
+    async def _translate_with_context(self, text: str, direction: str, custom_map: dict, context: str) -> str:
+        """Translate text with context for better accuracy in replies"""
+        try:
+            # Apply preprocessing to both context and text
+            if direction == "zh_to_en":
+                context_processed = preprocess(_apply_dictionary(context, "zh_to_en", custom_map), "zh_to_en")
+                text_processed = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
+                src_lang = "Chinese"
+                tgt_lang = "English"
+            else:
+                context_processed = preprocess(_apply_dictionary(context, "en_to_zh", custom_map), "en_to_zh")
+                text_processed = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
+                src_lang = "English" 
+                tgt_lang = "Chinese (Simplified)"
+            
+            # Combine context and reply text
+            combined_text = f"{context_processed}\n{text_processed}"
+            
+            # Translate the combined text
+            translated_combined = await self._call_translate(combined_text, src_lang, tgt_lang)
+            
+            if translated_combined == "/":
+                # Fallback: translate reply text only
+                return await self._call_translate(text_processed, src_lang, tgt_lang)
+            
+            # Extract the reply part from translation
+            lines = translated_combined.split('\n')
+            if len(lines) >= 2:
+                # Return the last line(s) that correspond to the reply
+                reply_lines = lines[1:]
+                reply_translation = '\n'.join(reply_lines).strip()
+                return reply_translation if reply_translation else translated_combined
+            else:
+                # If splitting failed, return the whole translation
+                return translated_combined
+                
+        except Exception as e:
+            logger.error(f"Context translation failed: {e}")
+            # Fallback to normal translation
+            if direction == "zh_to_en":
+                pre = preprocess(_apply_dictionary(text, "zh_to_en", custom_map), "zh_to_en")
+                return await self._call_translate(pre, "Chinese", "English")
+            else:
+                pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
+                return await self._call_translate(pre, "English", "Chinese (Simplified)")
 
     def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
         return _apply_abbreviations(s or "", gid)
@@ -1069,8 +1119,15 @@ class TranslatorBot(commands.Bot):
             return
         txt = strip_banner(raw)
         lang = await self.detect_language(txt)
+        
+        # Get reply context for better translation accuracy
+        reply_context = None
+        ref = await self._get_ref_message(msg)
+        if ref is not None:
+            reply_context = strip_banner(ref.content or "")
+        
         async def to_target(text: str, direction: str) -> str:
-            tr = await self.translate_text(text, direction, cm)
+            tr = await self.translate_text(text, direction, cm, context=reply_context)
             if tr == "/":
                 return text
             return tr
