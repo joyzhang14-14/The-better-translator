@@ -723,6 +723,31 @@ class TranslatorBot(commands.Bot):
     def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
         return _apply_abbreviations(s or "", gid)
 
+    async def _preprocess_with_gpt_check(self, text: str, direction: str, custom_map: dict = None) -> str:
+        """Apply preprocessing with GPT judgment for bao_de patterns to avoid unwanted FSURE encoding"""
+        if direction == "zh_to_en" and custom_map:
+            # Check if text contains '包的' pattern that might need GPT judgment  
+            text_dict_applied = _apply_dictionary(text, "zh_to_en", custom_map)
+            gpt_processed = False
+            if has_bao_de_pattern(text_dict_applied):
+                try:
+                    gpt_result = await self._gpt_judge_bao_de(text_dict_applied)
+                    if gpt_result != "NOT_FOR_SURE":
+                        # GPT determined this is "for sure" meaning, skip FSURE encoding
+                        # but don't return translation here - let the main translation logic handle it
+                        gpt_processed = True
+                    else:
+                        # GPT determined this is NOT "for sure", skip normal 包的 processing
+                        gpt_processed = True
+                except Exception as e:
+                    logger.error(f"GPT judgment failed in preprocessing: {e}")
+            
+            return preprocess(text_dict_applied, direction, skip_bao_de=gpt_processed)
+        else:
+            # For non-zh_to_en directions or when no custom_map, use normal preprocessing
+            processed_text = _apply_dictionary(text, direction, custom_map) if custom_map else text
+            return preprocess(processed_text, direction)
+
 
     async def is_pass_through(self, msg: discord.Message) -> bool:
         t = (msg.content or "")
@@ -1197,13 +1222,14 @@ class TranslatorBot(commands.Bot):
         cm = guild_dicts.get(gid, {})
         raw = msg.content or ""
         # Apply preprocessing first (handles 6/666 -> 厉害 conversion)
-        from preprocess import preprocess
-        raw = preprocess(raw, "zh_to_en")  # Always use zh_to_en for praise number conversion
+        # Use GPT check to avoid FSURE encoding when not appropriate
+        raw = await self._preprocess_with_gpt_check(raw, "zh_to_en", cm)
         raw = self._text_after_abbrev_pre(raw, gid)
         
         if patched_content is not None:
             # Apply preprocessing and abbreviations to the patched result
-            raw = preprocess(patched_content, "zh_to_en")
+            # Use GPT check to avoid FSURE encoding when not appropriate
+            raw = await self._preprocess_with_gpt_check(patched_content, "zh_to_en", cm)
             raw = self._text_after_abbrev_pre(raw, gid)
             
             # For star patches, edit existing messages instead of sending new ones
