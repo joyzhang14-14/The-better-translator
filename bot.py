@@ -4,9 +4,10 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Optional, Tuple, List, Dict
 from io import BytesIO
-from collections import deque
+from collections import deque, defaultdict
 
 import aiohttp
 import discord
@@ -253,6 +254,10 @@ class TranslatorBot(commands.Bot):
         # Initialize GPT handler and translator
         self.gpt_handler = GPTHandler(openai_client)
         self.translator = Translator(deepl_client, self.gpt_handler)
+        # Message history for context-aware translation (2-minute window)
+        # Structure: {(guild_id, channel_id, user_id): [(timestamp, content), ...]}
+        self._user_message_history: Dict[Tuple[int, int, int], List[Tuple[float, str]]] = defaultdict(list)
+        self.CONTEXT_WINDOW_SECONDS = 120  # 2 minutes
 
     def _mirror_load(self):
         try:
@@ -564,6 +569,53 @@ class TranslatorBot(commands.Bot):
 
     def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
         return _apply_abbreviations(s or "", gid)
+
+    def _add_message_to_history(self, guild_id: int, channel_id: int, user_id: int, content: str):
+        """Add a message to user's history for context-aware translation"""
+        if not content or not content.strip():
+            return
+        
+        key = (guild_id, channel_id, user_id)
+        current_time = time.time()
+        
+        # Add new message
+        self._user_message_history[key].append((current_time, content.strip()))
+        
+        # Clean up old messages (older than 2 minutes)
+        self._cleanup_message_history(key, current_time)
+        
+        # Keep only last 10 messages to prevent memory bloat
+        if len(self._user_message_history[key]) > 10:
+            self._user_message_history[key] = self._user_message_history[key][-10:]
+
+    def _cleanup_message_history(self, key: Tuple[int, int, int], current_time: float):
+        """Remove messages older than the context window"""
+        cutoff_time = current_time - self.CONTEXT_WINDOW_SECONDS
+        history = self._user_message_history[key]
+        self._user_message_history[key] = [(ts, content) for ts, content in history if ts >= cutoff_time]
+
+    def _get_context_messages(self, guild_id: int, channel_id: int, user_id: int) -> List[str]:
+        """Get recent messages from user for context (excluding the current message)"""
+        key = (guild_id, channel_id, user_id)
+        current_time = time.time()
+        
+        # Clean up old messages first
+        self._cleanup_message_history(key, current_time)
+        
+        # Get messages excluding the most recent one (which is the current message)
+        history = self._user_message_history[key]
+        if len(history) <= 1:
+            return []
+        
+        # Return all but the last message (last message is the current one we just added)
+        context_messages = [content for _, content in history[:-1]]
+        return context_messages
+
+    def _should_use_context_translation(self, guild_id: int, channel_id: int, user_id: int) -> bool:
+        """Check if we should use context-aware translation based on recent message history"""
+        context_messages = self._get_context_messages(guild_id, channel_id, user_id)
+        # Use context translation if user has sent 1+ messages in the last 2 minutes
+        return len(context_messages) >= 1
 
 
 
@@ -1073,14 +1125,23 @@ class TranslatorBot(commands.Bot):
         txt = strip_banner(raw)
         lang = await self.detect_language(txt)
         
-        # Get reply context for better translation accuracy
+        # Add message to history BEFORE processing (for context-aware translation)
+        self._add_message_to_history(msg.guild.id, msg.channel.id, msg.author.id, txt)
+        
+        # Get reply context for better translation accuracy (highest priority)
         reply_context = None
         ref = await self._get_ref_message(msg)
         if ref is not None:
             reply_context = strip_banner(ref.content or "")
         
+        # Get message history context if no explicit reply (second priority)
+        history_messages = None
+        if reply_context is None and self._should_use_context_translation(msg.guild.id, msg.channel.id, msg.author.id):
+            history_messages = self._get_context_messages(msg.guild.id, msg.channel.id, msg.author.id)
+            logger.info(f"DEBUG: Using message history context for user {msg.author.id}: {len(history_messages)} messages")
+        
         async def to_target(text: str, direction: str) -> str:
-            tr = await self.translator.translate_text(text, direction, cm, context=reply_context)
+            tr = await self.translator.translate_text(text, direction, cm, context=reply_context, history_messages=history_messages)
             if tr == "/":
                 return text
             return tr
