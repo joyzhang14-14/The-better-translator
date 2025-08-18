@@ -30,11 +30,21 @@ class Translator:
                 logger.error(f"Unsupported target language: {tgt_lang}")
                 return "/"
             
+            logger.info(f"DEEPL_DEBUG: Calling DeepL API")
+            logger.info(f"DEEPL_DEBUG: Input text: {repr(src_text)}")
+            logger.info(f"DEEPL_DEBUG: Source lang: {source_lang}, Target lang: {target_lang}")
+            
             result = await asyncio.get_event_loop().run_in_executor(
                 None, 
                 lambda: self.deepl_client.translate_text(src_text, target_lang=target_lang, source_lang=source_lang)
             )
+            
+            logger.info(f"DEEPL_DEBUG: Raw DeepL result: {repr(result.text)}")
+            
             out = result.text.strip()
+            
+            logger.info(f"DEEPL_DEBUG: Final output: {repr(out)}")
+            
             return out or "/"
         except Exception as e:
             logger.error(f"DeepL translation failed: {e}")
