@@ -45,6 +45,16 @@ class Translator:
             
             logger.info(f"DEEPL_DEBUG: Final output: {repr(out)}")
             
+            # Check for potential truncation and retry with sentence splitting if detected
+            if self._detect_potential_truncation(src_text, out, src_lang):
+                logger.warning(f"DEEPL_DEBUG: Detected potential truncation, trying sentence splitting")
+                retry_result = await self._retry_with_sentence_splitting(src_text, source_lang, target_lang)
+                if retry_result and retry_result != "/":
+                    logger.info(f"DEEPL_DEBUG: Sentence splitting result: {repr(retry_result)}")
+                    return retry_result
+                else:
+                    logger.info(f"DEEPL_DEBUG: Sentence splitting failed, using original result")
+            
             return out or "/"
         except Exception as e:
             logger.error(f"DeepL translation failed: {e}")
@@ -281,3 +291,81 @@ class Translator:
                 pre = preprocess(self._apply_dictionary(text_without_emojis, "en_to_zh", custom_map), "en_to_zh")
                 fallback_result = await self._call_translate(pre, "English", "Chinese (Simplified)")
                 return restore_emojis(fallback_result, extracted_emojis)
+    def _detect_potential_truncation(self, input_text: str, output_text: str, src_lang: str) -> bool:
+        """Detect if DeepL might have truncated the translation"""
+        # Skip detection for very short texts
+        if len(input_text) < 30:
+            return False
+            
+        # For English input, check for common truncation patterns
+        if src_lang == "English":
+            # Count question marks
+            input_questions = input_text.count('?')
+            output_questions = output_text.count('？')
+            
+            # If input has 2+ questions but output has fewer, likely truncated
+            if input_questions >= 2 and output_questions < input_questions:
+                logger.info(f"DEEPL_DEBUG: Question count mismatch: input={input_questions}, output={output_questions}")
+                return True
+                
+            # If input ends with question but output doesn't
+            if input_text.strip().endswith('?') and not output_text.strip().endswith('？'):
+                logger.info(f"DEEPL_DEBUG: Input ends with ? but output doesn't end with ？")
+                return True
+                
+            # Check for specific patterns that indicate truncation
+            # If output is significantly shorter than expected for English->Chinese
+            expected_min_length = len(input_text) * 0.4  # Very conservative estimate
+            if len(output_text) < expected_min_length:
+                logger.info(f"DEEPL_DEBUG: Output too short: {len(output_text)} < {expected_min_length}")
+                return True
+                
+        return False
+
+    async def _retry_with_sentence_splitting(self, src_text: str, source_lang: str, target_lang: str) -> str:
+        """Retry translation using sentence splitting when truncation is detected"""
+        try:
+            # Split on sentence boundaries for English
+            import re
+            if source_lang == "EN":
+                # More sophisticated splitting for English
+                # Split on sentence endings but preserve them
+                sentences = re.split(r'([.!?]+)', src_text.strip())
+                
+                # Reconstruct sentences with their punctuation
+                reconstructed = []
+                for i in range(0, len(sentences)-1, 2):
+                    sentence = sentences[i].strip()
+                    punct = sentences[i+1] if i+1 < len(sentences) else ""
+                    if sentence:
+                        reconstructed.append(sentence + punct)
+                
+                # Handle case where text doesn't end with punctuation
+                if len(sentences) % 2 == 1 and sentences[-1].strip():
+                    reconstructed.append(sentences[-1].strip())
+                
+                logger.info(f"DEEPL_DEBUG: Split into {len(reconstructed)} sentences: {reconstructed}")
+                
+                if len(reconstructed) <= 1:
+                    return None  # No splitting possible
+                
+                # Translate each sentence separately
+                translations = []
+                for sentence in reconstructed:
+                    if sentence.strip():
+                        result = await asyncio.get_event_loop().run_in_executor(
+                            None, 
+                            lambda s=sentence: self.deepl_client.translate_text(s, target_lang=target_lang, source_lang=source_lang)
+                        )
+                        translations.append(result.text.strip())
+                        logger.info(f"DEEPL_DEBUG: '{sentence}' -> '{result.text.strip()}'")
+                
+                # Combine translations
+                combined = "".join(translations)
+                logger.info(f"DEEPL_DEBUG: Combined sentence translations: '{combined}'")
+                return combined
+                
+        except Exception as e:
+            logger.error(f"Sentence splitting retry failed: {e}")
+            
+        return None
