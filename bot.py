@@ -481,8 +481,7 @@ class TranslatorBot(commands.Bot):
             r = await self.openai_client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
-                max_completion_tokens=5, 
-                temperature=0.0
+                max_completion_tokens=5
             )
             result = (r.choices[0].message.content or "").strip().lower()
             if "chinese" in result:
@@ -540,8 +539,7 @@ class TranslatorBot(commands.Bot):
             logger.info(f"DEBUG: Calling OpenAI for star patch merge...")
             r = await self.openai_client.chat.completions.create(
                 model="gpt-5-mini",
-                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
-                temperature=0.0
+                messages=[{"role":"system","content":sys},{"role":"user","content":usr}]
             )
             logger.info(f"DEBUG: OpenAI response received")
             result = (r.choices[0].message.content or "").strip()
@@ -643,8 +641,7 @@ class TranslatorBot(commands.Bot):
                 
             r = await self.openai_client.chat.completions.create(
                 model="gpt-5-mini", 
-                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
-                temperature=0.0
+                messages=[{"role":"system","content":sys},{"role":"user","content":usr}]
             )
             result = (r.choices[0].message.content or "").strip()
             logger.info(f"GPT bao_de judgment result: '{result}' for text: '{text}'")
