@@ -724,25 +724,15 @@ class TranslatorBot(commands.Bot):
         return _apply_abbreviations(s or "", gid)
 
     async def _preprocess_with_gpt_check(self, text: str, direction: str, custom_map: dict = None) -> str:
-        """Apply preprocessing with GPT judgment for bao_de patterns to avoid unwanted FSURE encoding"""
+        """Apply preprocessing but skip bao_de encoding to let translate_text handle GPT judgment"""
         if direction == "zh_to_en" and custom_map:
-            # Check if text contains '包的' pattern that might need GPT judgment  
+            # Check if text contains '包的' pattern that needs GPT judgment
             text_dict_applied = _apply_dictionary(text, "zh_to_en", custom_map)
-            gpt_processed = False
-            if has_bao_de_pattern(text_dict_applied):
-                try:
-                    gpt_result = await self._gpt_judge_bao_de(text_dict_applied)
-                    if gpt_result != "NOT_FOR_SURE":
-                        # GPT determined this is "for sure" meaning, skip FSURE encoding
-                        # but don't return translation here - let the main translation logic handle it
-                        gpt_processed = True
-                    else:
-                        # GPT determined this is NOT "for sure", skip normal 包的 processing
-                        gpt_processed = True
-                except Exception as e:
-                    logger.error(f"GPT judgment failed in preprocessing: {e}")
+            skip_bao_de = has_bao_de_pattern(text_dict_applied)
             
-            return preprocess(text_dict_applied, direction, skip_bao_de=gpt_processed)
+            # If has bao_de pattern, skip the encoding in preprocessing 
+            # and let translate_text function handle the GPT judgment and translation
+            return preprocess(text_dict_applied, direction, skip_bao_de=skip_bao_de)
         else:
             # For non-zh_to_en directions or when no custom_map, use normal preprocessing
             processed_text = _apply_dictionary(text, direction, custom_map) if custom_map else text
