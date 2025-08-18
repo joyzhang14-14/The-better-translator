@@ -481,7 +481,7 @@ class TranslatorBot(commands.Bot):
             r = await self.openai_client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
-                max_tokens=5, 
+                max_completion_tokens=5, 
                 temperature=0.0
             )
             result = (r.choices[0].message.content or "").strip().lower()
