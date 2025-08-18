@@ -1,7 +1,12 @@
 import re
+from typing import Tuple, List
 
 FSURE_HEAD = "\x1eFSURE\x1e"
 FSURE_SEP = "\x1eSEP\x1e"
+
+CUSTOM_EMOJI_RE = re.compile(r"<a?:\w{2,}:\d+>")
+UNICODE_EMOJI_RE = re.compile(r"[\U0001F300-\U0001FAFF\U00002700-\U000027BF\U00002600-\U000026FF\U0001F1E6-\U0001F1FF]+")
+EMOJI_PLACEHOLDER = "\x1e{}\x1e"
 
 _PUNCT = r"，。！？；：、,.!?;:\(\)\[\]\{\}《》〈〉「」『』【】<>…～~\s"
 _Q_ANY = r"(?:哪(?:个|些|儿|边|路|位|只|队)?|谁|什么|啥|哪里|哪儿)"
@@ -81,6 +86,44 @@ def _encode_bao_de(s: str) -> str:
     else:
         return FSURE_HEAD + core + FSURE_SEP
 
+def extract_emojis(text: str) -> Tuple[str, List[str]]:
+    """Extract all emojis from text and replace with placeholders"""
+    if not text:
+        return text, []
+    
+    emojis = []
+    result = text
+    
+    # Extract custom Discord emojis first
+    custom_matches = list(CUSTOM_EMOJI_RE.finditer(text))
+    for i, match in enumerate(custom_matches):
+        emoji = match.group(0)
+        emojis.append(emoji)
+        placeholder = EMOJI_PLACEHOLDER.format(len(emojis) - 1)
+        result = result.replace(emoji, placeholder, 1)
+    
+    # Extract Unicode emojis
+    unicode_matches = list(UNICODE_EMOJI_RE.finditer(result))
+    for i, match in enumerate(unicode_matches):
+        emoji = match.group(0)
+        emojis.append(emoji)
+        placeholder = EMOJI_PLACEHOLDER.format(len(emojis) - 1)
+        result = result.replace(emoji, placeholder, 1)
+    
+    return result, emojis
+
+def restore_emojis(text: str, emojis: List[str]) -> str:
+    """Restore emojis from placeholders back to original text"""
+    if not text or not emojis:
+        return text
+    
+    result = text
+    for i, emoji in enumerate(emojis):
+        placeholder = EMOJI_PLACEHOLDER.format(i)
+        result = result.replace(placeholder, emoji)
+    
+    return result
+
 def has_bao_de_pattern(text: str) -> bool:
     """Check if text contains '包的' pattern that might need GPT judgment"""
     if not text:
@@ -102,3 +145,16 @@ def preprocess(text: str, direction: str, skip_bao_de: bool = False) -> str:
         if not s.startswith(FSURE_HEAD):
             s = _which_choose_disamb(s)
     return s
+
+def preprocess_with_emoji_extraction(text: str, direction: str, skip_bao_de: bool = False) -> Tuple[str, List[str]]:
+    """Preprocess text with emoji extraction - emojis are extracted before language detection and abbreviation processing"""
+    if not text:
+        return text, []
+    
+    # Extract emojis before any processing (including language detection and abbreviations)
+    text_without_emojis, extracted_emojis = extract_emojis(text)
+    
+    # Apply normal preprocessing to text without emojis
+    processed_text = preprocess(text_without_emojis, direction, skip_bao_de)
+    
+    return processed_text, extracted_emojis

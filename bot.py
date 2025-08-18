@@ -15,10 +15,12 @@ from openai import AsyncOpenAI
 import deepl
 from dotenv import load_dotenv
 
-from preprocess import preprocess, FSURE_HEAD, FSURE_SEP, has_bao_de_pattern
+from preprocess import preprocess, preprocess_with_emoji_extraction, extract_emojis, restore_emojis, FSURE_HEAD, FSURE_SEP, has_bao_de_pattern
 import joy_cmds as prompt_mod
 import health_server
 from storage import storage
+from translator import Translator
+from gpt_handler import GPTHandler
 
 # Load environment variables from .env file
 load_dotenv()
@@ -248,6 +250,9 @@ class TranslatorBot(commands.Bot):
         self.mirror_map: Dict[int, Dict[int, Dict[int, int]]] = {}
         self._recent_user_message: Dict[int, int] = {}
         self.health_runner = None
+        # Initialize GPT handler and translator
+        self.gpt_handler = GPTHandler(openai_client)
+        self.translator = Translator(deepl_client, self.gpt_handler)
 
     def _mirror_load(self):
         try:
@@ -443,9 +448,11 @@ class TranslatorBot(commands.Bot):
         if not t:
             return "meaningless"
         
-        # First try simple character counting for obvious cases
-        t2 = CUSTOM_EMOJI_RE.sub("", t)
-        t2 = UNICODE_EMOJI_RE.sub("", t2)
+        # Extract emojis before language detection to avoid emoji interference
+        text_without_emojis, _ = extract_emojis(t)
+        
+        # Process text without emojis for accurate language detection
+        t2 = text_without_emojis
         t2 = re.sub(r"(e?m+)+", "em", t2, flags=re.IGNORECASE)
         zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
         en_count = len(re.findall(r"[A-Za-z]", t2))
@@ -458,7 +465,7 @@ class TranslatorBot(commands.Bot):
         
         # Mixed language cases - use AI to determine primary language
         if zh_count and en_count:
-            return await self._ai_detect_language(t)
+            return await self._ai_detect_language(text_without_emojis)
         
         return "meaningless"
 
@@ -554,168 +561,6 @@ class TranslatorBot(commands.Bot):
             logger.info(f"DEBUG: Using fallback result: '{fallback_result}'")
             return fallback_result
 
-    async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
-        if not src_text:
-            return "/"
-        
-        try:
-            # Map language names to DeepL language codes
-            if src_lang == "Chinese":
-                source_lang = "ZH"
-            elif src_lang == "English":
-                source_lang = "EN"
-            else:
-                source_lang = None  # Let DeepL auto-detect
-            
-            if tgt_lang.startswith("Chinese"):
-                target_lang = "ZH"
-            elif tgt_lang == "English":
-                target_lang = "EN-US"
-            else:
-                logger.error(f"Unsupported target language: {tgt_lang}")
-                return "/"
-            
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, 
-                lambda: deepl_client.translate_text(src_text, target_lang=target_lang, source_lang=source_lang)
-            )
-            out = result.text.strip()
-            return out or "/"
-        except Exception as e:
-            logger.error(f"DeepL translation failed: {e}")
-            return "/"
-
-    async def translate_text(self, text: str, direction: str, custom_map: dict, context: str = None) -> str:
-        # Handle context-aware translation for replies
-        if context:
-            return await self._translate_with_context(text, direction, custom_map, context)
-        
-        if direction == "zh_to_en":
-            # Check if text contains '包的' pattern that might need GPT judgment
-            original_text = _apply_dictionary(text, "zh_to_en", custom_map)
-            gpt_processed = False
-            if has_bao_de_pattern(original_text):
-                gpt_result = await self._gpt_judge_bao_de(original_text)
-                if gpt_result != "NOT_FOR_SURE":
-                    # GPT determined this is "for sure" meaning and provided translation
-                    return gpt_result
-                else:
-                    # GPT determined this is NOT "for sure", skip normal 包的 processing
-                    gpt_processed = True
-            
-            pre = preprocess(original_text, "zh_to_en", skip_bao_de=gpt_processed)
-            if pre.startswith(FSURE_HEAD):
-                payload = pre[len(FSURE_HEAD):]
-                if FSURE_SEP in payload:
-                    core, tail = payload.split(FSURE_SEP, 1)
-                else:
-                    core, tail = payload, ""
-                en_core = await self._call_translate(core, "Chinese", "English")
-                en_tail = await self._call_translate(tail, "Chinese", "English") if tail.strip() else ""
-                out = (en_core or "/")
-                if out != "/":
-                    out = out.strip().rstrip(".") + " for sure"
-                    if en_tail and en_tail != "/":
-                        out = out + ", " + en_tail
-                return out or "/"
-            return await self._call_translate(pre, "Chinese", "English")
-        else:
-            pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
-            return await self._call_translate(pre, "English", "Chinese (Simplified)")
-
-    async def _gpt_judge_bao_de(self, text: str) -> str:
-        """Use GPT to judge if '包的' in text means 'for sure' and translate accordingly"""
-        sys = (
-            "You are a Chinese to English translator. Analyze the Chinese text and determine if any instance of '包的' "
-            "means 'for sure' (expressing certainty/guarantee) rather than referring to a physical bag. "
-            "Common patterns that mean 'for sure': 包赢的, 包过的, 包好的, 包准的, 包成的, etc. "
-            "If '包的' expresses certainty/guarantee, translate the entire sentence naturally. "
-            "If '包的' refers to a bag/package or if there's no clear '包的' pattern, return 'NOT_FOR_SURE' exactly. "
-            "Examples: '包赢的' = guaranteed win, '包好的' = guaranteed good, '包过的' = guaranteed pass."
-        )
-        usr = f"Chinese text: {text}"
-        
-        try:
-            if not self.openai_client:
-                return "NOT_FOR_SURE"
-                
-            r = await self.openai_client.chat.completions.create(
-                model="gpt-5-mini", 
-                messages=[{"role":"system","content":sys},{"role":"user","content":usr}]
-            )
-            result = (r.choices[0].message.content or "").strip()
-            logger.info(f"GPT bao_de judgment result: '{result}' for text: '{text}'")
-            return result
-        except Exception as e:
-            logger.error(f"GPT bao_de judgment failed: {e}")
-            return "NOT_FOR_SURE"
-
-    async def _translate_with_context(self, text: str, direction: str, custom_map: dict, context: str) -> str:
-        """Translate text with context for better accuracy in replies"""
-        try:
-            # Apply preprocessing to both context and text
-            if direction == "zh_to_en":
-                # Check if text contains '包的' pattern that might need GPT judgment
-                text_dict_applied = _apply_dictionary(text, "zh_to_en", custom_map)
-                gpt_processed = False
-                if has_bao_de_pattern(text_dict_applied):
-                    gpt_result = await self._gpt_judge_bao_de(text_dict_applied)
-                    if gpt_result != "NOT_FOR_SURE":
-                        # GPT determined this is "for sure" meaning and provided translation
-                        return gpt_result
-                    else:
-                        # GPT determined this is NOT "for sure", skip normal 包的 processing
-                        gpt_processed = True
-                
-                context_processed = preprocess(_apply_dictionary(context, "zh_to_en", custom_map), "zh_to_en")
-                text_processed = preprocess(text_dict_applied, "zh_to_en", skip_bao_de=gpt_processed)
-                src_lang = "Chinese"
-                tgt_lang = "English"
-            else:
-                context_processed = preprocess(_apply_dictionary(context, "en_to_zh", custom_map), "en_to_zh")
-                text_processed = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
-                src_lang = "English" 
-                tgt_lang = "Chinese (Simplified)"
-            
-            # Combine context and reply text
-            combined_text = f"{context_processed}\n{text_processed}"
-            
-            # Translate the combined text
-            translated_combined = await self._call_translate(combined_text, src_lang, tgt_lang)
-            
-            if translated_combined == "/":
-                # Fallback: translate reply text only
-                return await self._call_translate(text_processed, src_lang, tgt_lang)
-            
-            # Extract the reply part from translation
-            lines = translated_combined.split('\n')
-            if len(lines) >= 2:
-                # Return the last line(s) that correspond to the reply
-                reply_lines = lines[1:]
-                reply_translation = '\n'.join(reply_lines).strip()
-                return reply_translation if reply_translation else translated_combined
-            else:
-                # If splitting failed, return the whole translation
-                return translated_combined
-                
-        except Exception as e:
-            logger.error(f"Context translation failed: {e}")
-            # Fallback to normal translation with GPT judgment
-            if direction == "zh_to_en":
-                # Apply same GPT judgment logic as in main translate_text function
-                text_dict_applied = _apply_dictionary(text, "zh_to_en", custom_map)
-                gpt_processed = False
-                if has_bao_de_pattern(text_dict_applied):
-                    gpt_result = await self._gpt_judge_bao_de(text_dict_applied)
-                    if gpt_result != "NOT_FOR_SURE":
-                        return gpt_result
-                    else:
-                        gpt_processed = True
-                pre = preprocess(text_dict_applied, "zh_to_en", skip_bao_de=gpt_processed)
-                return await self._call_translate(pre, "Chinese", "English")
-            else:
-                pre = preprocess(_apply_dictionary(text, "en_to_zh", custom_map), "en_to_zh")
-                return await self._call_translate(pre, "English", "Chinese (Simplified)")
 
     def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
         return _apply_abbreviations(s or "", gid)
@@ -762,9 +607,9 @@ class TranslatorBot(commands.Bot):
         cm = guild_dicts.get(gid_str, {})
         ref_lang = await self.detect_language(raw)
         if target_lang == "Chinese" and ref_lang == "English":
-            show = await self.translate_text(raw, "en_to_zh", cm)
+            show = await self.translator.translate_text(raw, "en_to_zh", cm)
         elif target_lang == "English" and ref_lang == "Chinese":
-            show = await self.translate_text(raw, "zh_to_en", cm)
+            show = await self.translator.translate_text(raw, "zh_to_en", cm)
         else:
             show = raw
         return jump, show, False
@@ -1088,7 +933,7 @@ class TranslatorBot(commands.Bot):
             logger.info(f"DEBUG: Star patch detected language: '{lang}' for text: '{txt}'")
             
             async def to_target(text: str, direction: str) -> str:
-                tr = await self.translate_text(text, direction, cm)
+                tr = await self.translator.translate_text(text, direction, cm)
                 if tr == "/":
                     return text
                 return tr
@@ -1235,7 +1080,7 @@ class TranslatorBot(commands.Bot):
             reply_context = strip_banner(ref.content or "")
         
         async def to_target(text: str, direction: str) -> str:
-            tr = await self.translate_text(text, direction, cm, context=reply_context)
+            tr = await self.translator.translate_text(text, direction, cm, context=reply_context)
             if tr == "/":
                 return text
             return tr
