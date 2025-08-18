@@ -71,12 +71,22 @@ class Translator:
         if direction == "zh_to_en":
             original_text = self._apply_dictionary(text, "zh_to_en", custom_map)
             gpt_processed = False
+            # Debug logging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"DEBUG translate_text: input='{text}', after_dict='{original_text}'")
             if has_bao_de_pattern(original_text):
+                logger.info(f"DEBUG: Detected bao_de pattern in '{original_text}', calling GPT")
                 gpt_result = await self.gpt_handler.judge_bao_de(original_text)
+                logger.info(f"DEBUG: GPT result for '{original_text}': '{gpt_result}'")
                 if gpt_result != "NOT_FOR_SURE":
+                    logger.info(f"DEBUG: Returning GPT result: '{gpt_result}'")
                     return gpt_result
                 else:
+                    logger.info(f"DEBUG: GPT said NOT_FOR_SURE, continuing with normal processing")
                     gpt_processed = True
+            else:
+                logger.info(f"DEBUG: No bao_de pattern detected in '{original_text}'")
             
             pre = preprocess(original_text, "zh_to_en", skip_bao_de=gpt_processed)
             if pre.startswith(FSURE_HEAD):

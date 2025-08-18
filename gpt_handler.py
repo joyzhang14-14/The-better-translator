@@ -126,8 +126,13 @@ class GPTHandler:
         )
         usr = f"Chinese text: {text}"
         
+        logger.info(f"DEBUG GPT judge_bao_de: input text='{text}'")
+        logger.info(f"DEBUG GPT system prompt: {sys}")
+        logger.info(f"DEBUG GPT user prompt: {usr}")
+        
         try:
             if not self.openai_client:
+                logger.info(f"DEBUG GPT: No OpenAI client, returning NOT_FOR_SURE")
                 return "NOT_FOR_SURE"
                 
             r = await self.openai_client.chat.completions.create(
@@ -135,6 +140,7 @@ class GPTHandler:
                 messages=[{"role":"system","content":sys},{"role":"user","content":usr}]
             )
             result = (r.choices[0].message.content or "").strip()
+            logger.info(f"DEBUG GPT: Raw response='{result}'")
             logger.info(f"GPT bao_de judgment result: '{result}' for text: '{text}'")
             return result
         except Exception as e:
