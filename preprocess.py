@@ -3,7 +3,14 @@ import logging
 import asyncio
 from typing import Tuple, List
 
-# Removed hanzidentifier import - traditional/simplified conversion now handled centrally in gpt_handler.py
+# OpenCC for traditional to simplified Chinese conversion
+try:
+    from opencc import OpenCC
+    cc = OpenCC('t2s')  # Traditional to Simplified Chinese converter
+    HAS_OPENCC = True
+except ImportError:
+    cc = None
+    HAS_OPENCC = False
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +37,24 @@ _PAT_BAO_DE_SENT = re.compile(
     re.I,
 )
 
-# Traditional/simplified conversion logic removed from preprocess.py
-# All traditional Chinese conversion now handled centrally in gpt_handler.py using OpenCC
+def _convert_traditional_to_simplified(text: str) -> str:
+    """Convert traditional Chinese to simplified Chinese using OpenCC
+    All traditional input will be converted to simplified, simplified text remains unchanged"""
+    if not text:
+        return text
+    
+    if HAS_OPENCC and cc:
+        try:
+            converted = cc.convert(text)
+            if converted != text:
+                logger.info(f"OpenCC traditional to simplified: '{text}' → '{converted}'")
+            return converted
+        except Exception as e:
+            logger.error(f"OpenCC conversion failed: {e}, returning original text")
+            return text
+    else:
+        # If OpenCC is not available, return original text
+        return text
 
 def _rewrite_learned_from(s: str) -> str:
     if not s or _HAS_FOR_PURPOSE.search(s):
@@ -145,6 +168,9 @@ def has_bao_de_pattern(text: str) -> bool:
 def preprocess(text: str, direction: str, skip_bao_de: bool = False) -> str:
     s = text or ""
     
+    # FIRST: Convert traditional Chinese to simplified Chinese (at the very beginning)
+    s = _convert_traditional_to_simplified(s)
+    
     # Handle praise numbers for both directions 
     # (6/666 should become 厉害 regardless of source channel)
     s = _convert_praise_numbers(s)
@@ -159,14 +185,26 @@ def preprocess(text: str, direction: str, skip_bao_de: bool = False) -> str:
     return s
 
 def preprocess_with_emoji_extraction(text: str, direction: str, skip_bao_de: bool = False) -> Tuple[str, List[str]]:
-    """Preprocess text with emoji extraction - emojis are extracted before language detection and abbreviation processing"""
+    """Preprocess text with emoji extraction - emojis are extracted after traditional conversion but before other processing"""
     if not text:
         return text, []
     
-    # Extract emojis before any processing (including language detection and abbreviations)
+    # FIRST: Convert traditional Chinese to simplified Chinese
+    text = _convert_traditional_to_simplified(text)
+    
+    # THEN: Extract emojis before further processing
     text_without_emojis, extracted_emojis = extract_emojis(text)
     
-    # Apply normal preprocessing to text without emojis
-    processed_text = preprocess(text_without_emojis, direction, skip_bao_de)
+    # Apply normal preprocessing to text without emojis (but skip traditional conversion since we already did it)
+    s = text_without_emojis or ""
+    s = _convert_praise_numbers(s)
     
-    return processed_text, extracted_emojis
+    # Only apply Chinese-specific preprocessing for zh_to_en direction
+    if direction == "zh_to_en":
+        s = _rewrite_learned_from(s)
+        if not skip_bao_de:
+            s = _encode_bao_de(s)
+        if not s.startswith(FSURE_HEAD):
+            s = _which_choose_disamb(s)
+    
+    return s, extracted_emojis

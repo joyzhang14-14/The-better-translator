@@ -44,8 +44,7 @@ class GPTHandler:
         if not t:
             return "meaningless"
         
-        # Step 1: Convert traditional Chinese to simplified Chinese
-        t = self.convert_traditional_to_simplified(t)
+        # Traditional Chinese conversion now handled in preprocess functions
         
         # Step 2: Remove emojis and clean text
         t2 = CUSTOM_EMOJI_RE.sub("", t)
@@ -71,8 +70,7 @@ class GPTHandler:
 
     async def _ai_detect_language(self, text: str) -> str:
         """Legacy method - now just calls the main detect_language method"""
-        # Convert traditional to simplified first
-        text = self.convert_traditional_to_simplified(text)
+        # Traditional Chinese conversion now handled in preprocess functions
         
         # Use the same simple logic as detect_language
         t2 = CUSTOM_EMOJI_RE.sub("", text)

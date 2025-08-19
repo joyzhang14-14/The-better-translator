@@ -404,8 +404,7 @@ class TranslatorBot(commands.Bot):
         if not t:
             return "meaningless"
         
-        # Step 1: Convert traditional Chinese to simplified Chinese (consistent with system)
-        t = self.gpt_handler.convert_traditional_to_simplified(t)
+        # Traditional Chinese conversion now handled in preprocess functions
         
         # Step 2: Extract emojis before language detection to avoid emoji interference
         text_without_emojis, _ = extract_emojis(t)
@@ -1007,6 +1006,13 @@ class TranslatorBot(commands.Bot):
                             new_content = await to_target(txt, "zh_to_en")
                         elif lang == "English":
                             new_content = txt
+                        elif lang == "Mixed":
+                            # For Mixed language, determine primary and translate accordingly
+                            primary_lang = await self._gpt5_determine_primary_language(txt)
+                            if primary_lang == "Chinese":
+                                new_content = await to_target(txt, "zh_to_en")
+                            else:
+                                new_content = txt  # Keep as mixed/English
                         else:
                             new_content = txt
                             
@@ -1017,6 +1023,13 @@ class TranslatorBot(commands.Bot):
                             new_content = await to_target(txt, "en_to_zh")
                         elif lang == "Chinese":
                             new_content = txt
+                        elif lang == "Mixed":
+                            # For Mixed language, determine primary and translate accordingly
+                            primary_lang = await self._gpt5_determine_primary_language(txt)
+                            if primary_lang == "English":
+                                new_content = await to_target(txt, "en_to_zh")
+                            else:
+                                new_content = txt  # Keep as mixed/Chinese
                         else:
                             new_content = txt
                     
@@ -1118,8 +1131,8 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw, msg, lang="English")
             return
         txt = strip_banner(raw)
-        # Convert traditional Chinese to simplified Chinese before language detection
-        txt = self.gpt_handler.convert_traditional_to_simplified(txt)
+        # Apply preprocess to handle traditional Chinese conversion first
+        txt = preprocess(txt, "zh_to_en", skip_bao_de=True)
         lang = await self.detect_language(txt)
         logger.info(f"LANGUAGE_DEBUG: Original message: '{msg.content}', Processed: '{txt}', Detected language: '{lang}'")
         

@@ -86,17 +86,15 @@ class Translator:
             return preprocess(processed_text, direction)
 
     async def translate_text(self, text: str, direction: str, custom_map: dict, context: str = None, history_messages: list = None, guild_id: str = None, user_name: str = "用户") -> str:
-        # Convert traditional Chinese to simplified Chinese before any processing
-        text = self.gpt_handler.convert_traditional_to_simplified(text)
+        # Traditional Chinese conversion now handled in preprocess functions
         
         # Priority: explicit reply context > message history context > normal translation
         if context:
-            context = self.gpt_handler.convert_traditional_to_simplified(context)
+            # Context will be processed by _translate_with_context which uses preprocess_with_emoji_extraction
             return await self._translate_with_context(text, direction, custom_map, context, guild_id)
         elif history_messages:
-            # Convert all history messages from traditional to simplified
-            converted_history = [self.gpt_handler.convert_traditional_to_simplified(msg) for msg in history_messages]
-            return await self._translate_with_message_history(text, direction, custom_map, converted_history, guild_id)
+            # History messages will be processed by _translate_with_message_history which uses preprocess_with_emoji_extraction
+            return await self._translate_with_message_history(text, direction, custom_map, history_messages, guild_id)
         
         # Extract emojis from input text before any processing
         text_without_emojis, extracted_emojis = preprocess_with_emoji_extraction(text, direction, skip_bao_de=True)
