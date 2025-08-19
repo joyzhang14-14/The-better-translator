@@ -110,7 +110,7 @@ class ErrorSelectionView(discord.ui.View):
         count = 0
         for entry_id, entry in guild_glossaries.items():
             count += 1
-            replacement_type = "🔴 强制性" if not entry["needs_gpt"] else "🟡 选择性"
+            replacement_type = "🔴 强制性 mandatory" if not entry["needs_gpt"] else "🟡 选择性 optional"
             line = (f"`{count}.` {replacement_type} | "
                    f"{entry['source_language']} `{entry['source_text']}` → "
                    f"{entry['target_language']} `{entry['target_text']}`")
@@ -209,7 +209,7 @@ class DeleteGlossarySelect(discord.ui.Select):
         
         # Get the entry details for confirmation
         entry = guild_glossaries[selected_entry_id]
-        replacement_type = "强制性" if not entry["needs_gpt"] else "选择性"
+        replacement_type = "强制性 mandatory" if not entry["needs_gpt"] else "选择性 optional"
         
         # Show confirmation
         view = DeleteConfirmationView(self.guild_id, selected_entry_id, entry)
