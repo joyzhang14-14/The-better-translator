@@ -22,13 +22,27 @@ class GPTHandler:
         zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
         en_count = len(re.findall(r"[A-Za-z]", t2))
         
+        # Calculate total meaningful characters
+        total_chars = zh_count + en_count
+        
+        if total_chars == 0:
+            return "meaningless"
+        
+        # If text is purely one language
         if zh_count and not en_count:
             return "Chinese"
         if en_count and not zh_count:
             return "English"
         
+        # For mixed language, use 30% threshold rule
         if zh_count and en_count:
-            return await self._ai_detect_language(t)
+            zh_percentage = zh_count / total_chars
+            if zh_percentage >= 0.3:  # 30% or more Chinese characters
+                logger.info(f"Mixed language detected: {zh_percentage:.1%} Chinese, treating as Chinese")
+                return "Chinese"
+            else:
+                logger.info(f"Mixed language detected: {zh_percentage:.1%} Chinese, treating as English")
+                return "English"
         
         return "meaningless"
 
@@ -44,7 +58,11 @@ class GPTHandler:
                 t2 = CUSTOM_EMOJI_RE.sub("", text)
                 zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
                 en_count = len(re.findall(r"[A-Za-z]", t2))
-                return "Chinese" if zh_count >= en_count else "English"
+                total_chars = zh_count + en_count
+                if total_chars > 0:
+                    zh_percentage = zh_count / total_chars
+                    return "Chinese" if zh_percentage >= 0.3 else "English"
+                return "English"
                 
             r = await self.openai_client.chat.completions.create(
                 model="gpt-5-mini",
@@ -59,13 +77,21 @@ class GPTHandler:
             t2 = CUSTOM_EMOJI_RE.sub("", text)
             zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
             en_count = len(re.findall(r"[A-Za-z]", t2))
-            return "Chinese" if zh_count >= en_count else "English"
+            total_chars = zh_count + en_count
+            if total_chars > 0:
+                zh_percentage = zh_count / total_chars
+                return "Chinese" if zh_percentage >= 0.3 else "English"
+            return "English"
         except Exception as e:
             logger.error(f"AI language detection failed: {e}")
             t2 = CUSTOM_EMOJI_RE.sub("", text)
             zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
             en_count = len(re.findall(r"[A-Za-z]", t2))
-            return "Chinese" if zh_count >= en_count else "English"
+            total_chars = zh_count + en_count
+            if total_chars > 0:
+                zh_percentage = zh_count / total_chars
+                return "Chinese" if zh_percentage >= 0.3 else "English"
+            return "English"
 
     async def apply_star_patch(self, prev_text: str, patch: str) -> str:
         lang = await self.detect_language(prev_text)
