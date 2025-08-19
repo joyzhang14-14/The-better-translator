@@ -404,26 +404,32 @@ class TranslatorBot(commands.Bot):
         if not t:
             return "meaningless"
         
-        # Extract emojis before language detection to avoid emoji interference
+        # Step 1: Convert traditional Chinese to simplified Chinese (consistent with system)
+        t = self.gpt_handler.convert_traditional_to_simplified(t)
+        
+        # Step 2: Extract emojis before language detection to avoid emoji interference
         text_without_emojis, _ = extract_emojis(t)
         
-        # Process text without emojis for accurate language detection
+        # Step 3: Process text without emojis for accurate language detection
         t2 = text_without_emojis
         t2 = re.sub(r"(e?m+)+", "em", t2, flags=re.IGNORECASE)
         zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
         en_count = len(re.findall(r"[A-Za-z]", t2))
         
-        # Pure single language cases
-        if zh_count and not en_count:
+        # Step 4: Language detection logic consistent with user requirements:
+        # 1. Any Chinese character = Chinese (if no English)
+        # 2. Mixed Chinese-English = Mixed (for dual translation)
+        if zh_count > 0 and en_count > 0:
+            logger.info(f"Mixed language detected ({zh_count} Chinese, {en_count} English), treating as Mixed")
+            return "Mixed"
+        elif zh_count > 0:
+            logger.info(f"Pure Chinese detected ({zh_count} Chinese), treating as Chinese")
             return "Chinese"
-        if en_count and not zh_count:
+        elif en_count > 0:
+            logger.info(f"Pure English detected ({en_count} English), treating as English")
             return "English"
-        
-        # Mixed language cases - use AI to determine primary language
-        if zh_count and en_count:
-            return await self._ai_detect_language(text_without_emojis)
-        
-        return "meaningless"
+        else:
+            return "meaningless"
 
     async def _ai_detect_language(self, text: str) -> str:
         """Use AI to detect primary language for mixed-language text"""
@@ -1071,6 +1077,7 @@ class TranslatorBot(commands.Bot):
             return
         txt = strip_banner(raw)
         lang = await self.detect_language(txt)
+        logger.info(f"LANGUAGE_DEBUG: Original message: '{msg.content}', Processed: '{txt}', Detected language: '{lang}'")
         
         # Add message to history BEFORE processing (for context-aware translation)
         self._add_message_to_history(msg.guild.id, msg.channel.id, msg.author.id, txt)

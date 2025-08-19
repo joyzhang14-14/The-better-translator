@@ -89,8 +89,8 @@ class ErrorSelectionView(discord.ui.View):
     
     @discord.ui.button(label="1. 报告翻译逻辑错误 report bot logical bug", style=discord.ButtonStyle.red)
     async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Create and send the problem report modal with reference to original message
-        modal = ProblemReportModal(interaction.message)
+        # Create and send the problem report modal, don't pass main message for deletion
+        modal = ProblemReportModal(None)  # Don't delete main message
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="2. 添加术语 add prompt", style=discord.ButtonStyle.green)
@@ -106,8 +106,8 @@ class ErrorSelectionView(discord.ui.View):
             "user_id": user_id,
             "timestamp": time.time(),
             "step": "mandatory_selection",
-            "data": {},
-            "original_message": interaction.message  # Store reference to original message
+            "data": {}
+            # Don't store original_message to avoid deleting main selection message
         }
         
         # Show mandatory/optional selection
@@ -155,12 +155,7 @@ class ErrorSelectionView(discord.ui.View):
             
             await interaction.response.send_message(result, ephemeral=True)
         
-        # Delete the original bot message to clean up interface
-        try:
-            await interaction.message.delete()
-            logger.info("Deleted original bot message after listing glossaries")
-        except Exception as delete_error:
-            logger.warning(f"Failed to delete original message: {delete_error}")
+        # Don't delete the main selection message, it should remain for future use
             
     
     @discord.ui.button(label="4. 删除术语 delete prompt", style=discord.ButtonStyle.danger)
@@ -406,7 +401,7 @@ class MandatorySelectionView(discord.ui.View):
         session["step"] = "source_language_selection"
         session["timestamp"] = time.time()
         
-        # Show source language selection
+        # Show source language selection and clean up current message
         view = SourceLanguageSelectionView(self.session_id)
         await interaction.response.edit_message(
             content="需识别文字的语言\nThe language of the text to be recognized",
