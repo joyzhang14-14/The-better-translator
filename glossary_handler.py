@@ -126,21 +126,33 @@ class GlossaryHandler:
     
     def restore_cross_language_replacements(self, translated_text: str, session_key: str = "default") -> str:
         """Restore cross-language replacements after translation"""
+        logger.info(f"GLOSSARY DEBUG: restore_cross_language_replacements called - text='{translated_text}', session='{session_key}'")
+        
         if not hasattr(self, '_pending_replacements'):
+            logger.info(f"GLOSSARY DEBUG: No _pending_replacements attribute found")
             return translated_text
+        
+        logger.info(f"GLOSSARY DEBUG: _pending_replacements = {self._pending_replacements}")
         
         session_replacements = self._pending_replacements.get(session_key, {})
         if not session_replacements:
+            logger.info(f"GLOSSARY DEBUG: No replacements found for session '{session_key}'")
             return translated_text
+        
+        logger.info(f"GLOSSARY DEBUG: Session replacements = {session_replacements}")
         
         result = translated_text
         for placeholder, replacement in session_replacements.items():
+            old_result = result
             result = result.replace(placeholder, replacement)
+            logger.info(f"GLOSSARY DEBUG: Replacing '{placeholder}' -> '{replacement}': '{old_result}' -> '{result}'")
         
         # Clear this session's pending replacements
         if session_key in self._pending_replacements:
             del self._pending_replacements[session_key]
+            logger.info(f"GLOSSARY DEBUG: Cleared session '{session_key}' replacements")
         
+        logger.info(f"GLOSSARY DEBUG: Final result = '{result}'")
         return result
     
     def get_gpt_candidates(self, text: str, guild_id: str, source_language: str) -> List[Tuple[str, Dict]]:
