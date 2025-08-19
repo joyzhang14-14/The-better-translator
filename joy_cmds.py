@@ -251,6 +251,10 @@ class DeleteConfirmationView(discord.ui.View):
                 # Save to cloud storage
                 await storage.save_json("glossaries", glossaries)
                 
+                # Reload glossary handler to pick up changes
+                from glossary_handler import glossary_handler
+                glossary_handler.load_glossaries()
+                
                 await interaction.response.send_message(
                     f"✅ 术语删除成功 Glossary deleted successfully\n"
                     f"`{self.entry['source_text']}` → `{self.entry['target_text']}`",
@@ -490,6 +494,10 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
         
         # Save to cloud storage
         await storage.save_json("glossaries", glossaries)
+        
+        # Reload glossary handler to pick up new data
+        from glossary_handler import glossary_handler
+        glossary_handler.load_glossaries()
 
 def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, guild_abbrs, abbr_path, can_use):
     mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!error"]
