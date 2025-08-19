@@ -80,7 +80,7 @@ async def _cleanup_old_popups(user_id: int):
     
     for message in messages_to_delete:
         try:
-            # Don't delete the main selection message
+            # Don't delete the main selection message (check for version prefix)
             if message.content and "请选择操作类型 Please select operation type:" in message.content:
                 messages_to_keep.append(message)  # Keep this message
                 continue
@@ -666,7 +666,7 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         # Create and send the error selection view
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "请选择操作类型 Please select operation type:",
+            "v2.0.0 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
