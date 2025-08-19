@@ -242,18 +242,20 @@ class ErrorSelectionView(discord.ui.View):
         config = _load_json_or(CONFIG_PATH, {})
         
         # Get current glossary detection status (default: enabled)
-        guild_config = config.setdefault("guilds", {}).setdefault(guild_id, {})
+        guild_config = config.get("guilds", {}).get(guild_id, {})
         current_status = guild_config.get("glossary_enabled", True)
         
-        # Create toggle view
-        view = GlossaryToggleView(guild_id, current_status)
+        logger.info(f"PROMPT_DEBUG: Guild {guild_id} glossary status: {current_status}")
+        
+        # Create toggle view (no longer need to pass current_status as it reads from config)
+        view = GlossaryToggleView(guild_id)
         status_text = "启用 Enabled" if current_status else "禁用 Disabled"
         await interaction.response.send_message(
-            f"🔧 **术语检测设置 Prompt Detection Settings**\n\n"
+            f"**术语检测设置 Prompt Detection Settings**\n\n"
             f"**当前状态 Current Status**: {status_text}\n"
             f"**说明 Description**:\n"
-            f"• 启用 Enabled: 翻译可能较慢但更准确 Translation may be slower but more accurate\n"
-            f"• 禁用 Disabled: 翻译更快但可能不够准确 Translation faster but may be less accurate",
+            f"启用 Enabled: 翻译可能较慢但更准确 Translation may be slower but more accurate\n"
+            f"禁用 Disabled: 翻译更快但可能不够准确 Translation faster but may be less accurate",
             view=view,
             ephemeral=True
         )
@@ -267,15 +269,28 @@ class ErrorSelectionView(discord.ui.View):
             item.disabled = True
 
 class GlossaryToggleView(discord.ui.View):
-    def __init__(self, guild_id: str, current_status: bool, *, timeout=300):
+    def __init__(self, guild_id: str, *, timeout=300):
         super().__init__(timeout=timeout)
         self.guild_id = guild_id
-        self.current_status = current_status
+        # Don't store current_status, always read from config to get latest state
+    
+    def _get_current_status(self) -> bool:
+        """Get real-time glossary status from config file"""
+        config = _load_json_or(CONFIG_PATH, {})
+        guild_config = config.get("guilds", {}).get(self.guild_id, {})
+        status = guild_config.get("glossary_enabled", True)
+        logger.info(f"PROMPT_DEBUG: Reading real-time status for guild {self.guild_id}: {status}")
+        return status
     
     @discord.ui.button(label="启用术语检测 Enable Prompt Detection", style=discord.ButtonStyle.green)
     async def enable_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current_status:
-            await interaction.response.send_message("✅ 术语检测已经启用 Prompt detection is already enabled", ephemeral=True)
+        # Clean up old popup first
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Get real-time status
+        current_status = self._get_current_status()
+        if current_status:
+            await interaction.response.send_message("术语检测已经启用 Prompt detection is already enabled", ephemeral=True)
             # Track this popup message for cleanup
             _track_popup_message(interaction.user.id, await interaction.original_response())
             return
@@ -286,10 +301,10 @@ class GlossaryToggleView(discord.ui.View):
         _save_json(CONFIG_PATH, config)
         
         await interaction.response.send_message(
-            "✅ **术语检测已启用 Prompt Detection Enabled**\n\n"
-            "📈 翻译可能会变得稍慢，但会更加准确\n"
-            "📈 Translation may become slightly slower, but will be more accurate\n\n"
-            "🔄 设置已保存 Settings saved",
+            "**术语检测已启用 Prompt Detection Enabled**\n\n"
+            "翻译可能会变得稍慢，但会更加准确\n"
+            "Translation may become slightly slower, but will be more accurate\n\n"
+            "设置已保存 Settings saved",
             ephemeral=True
         )
         # Track this popup message for cleanup
@@ -297,8 +312,13 @@ class GlossaryToggleView(discord.ui.View):
     
     @discord.ui.button(label="禁用术语检测 Disable Prompt Detection", style=discord.ButtonStyle.red)
     async def disable_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not self.current_status:
-            await interaction.response.send_message("✅ 术语检测已经禁用 Prompt detection is already disabled", ephemeral=True)
+        # Clean up old popup first
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Get real-time status
+        current_status = self._get_current_status()
+        if not current_status:
+            await interaction.response.send_message("术语检测已经禁用 Prompt detection is already disabled", ephemeral=True)
             # Track this popup message for cleanup
             _track_popup_message(interaction.user.id, await interaction.original_response())
             return
@@ -309,10 +329,10 @@ class GlossaryToggleView(discord.ui.View):
         _save_json(CONFIG_PATH, config)
         
         await interaction.response.send_message(
-            "⚡ **术语检测已禁用 Prompt Detection Disabled**\n\n"
-            "🚀 翻译结果会出得更快，不过翻译结果可能会不准确\n"
-            "🚀 Translation results will be faster, but may be less accurate\n\n"
-            "🔄 设置已保存 Settings saved",
+            "**术语检测已禁用 Prompt Detection Disabled**\n\n"
+            "翻译结果会出得更快，不过翻译结果可能会不准确\n"
+            "Translation results will be faster, but may be less accurate\n\n"
+            "设置已保存 Settings saved",
             ephemeral=True
         )
         # Track this popup message for cleanup
@@ -748,11 +768,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
-        # VERSION: v2.1.0 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.1.1 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "v2.1.0 请选择操作类型 Please select operation type:",
+            "v2.1.1 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
