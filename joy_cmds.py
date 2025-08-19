@@ -89,8 +89,8 @@ class ErrorSelectionView(discord.ui.View):
     
     @discord.ui.button(label="1. 报告翻译逻辑错误 report bot logical bug", style=discord.ButtonStyle.red)
     async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Create and send the problem report modal
-        modal = ProblemReportModal()
+        # Create and send the problem report modal with reference to original message
+        modal = ProblemReportModal(interaction.message)
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="2. 添加术语 add prompt", style=discord.ButtonStyle.green)
@@ -106,7 +106,8 @@ class ErrorSelectionView(discord.ui.View):
             "user_id": user_id,
             "timestamp": time.time(),
             "step": "mandatory_selection",
-            "data": {}
+            "data": {},
+            "original_message": interaction.message  # Store reference to original message
         }
         
         # Show mandatory/optional selection
@@ -125,35 +126,42 @@ class ErrorSelectionView(discord.ui.View):
         
         if not guild_glossaries:
             await interaction.response.send_message("📋 本群组暂无术语 No glossaries in this guild", ephemeral=True)
-            return
-        
-        # Format glossaries list
-        lines = ["📋 **术语列表 Glossary List**\n"]
-        count = 0
-        for entry_id, entry in guild_glossaries.items():
-            count += 1
-            emoji_type = ":red_circle:" if not entry["needs_gpt"] else ":yellow_circle:"
-            replacement_type = "强制性Mandatory" if not entry["needs_gpt"] else "选择性Optional"
+        else:
+            # Format glossaries list
+            lines = ["📋 **术语列表 Glossary List**\n"]
+            count = 0
+            for entry_id, entry in guild_glossaries.items():
+                count += 1
+                emoji_type = ":red_circle:" if not entry["needs_gpt"] else ":yellow_circle:"
+                replacement_type = "强制性Mandatory" if not entry["needs_gpt"] else "选择性Optional"
+                
+                # Convert language names to bilingual format
+                source_lang_display = "中文Chinese" if entry['source_language'] == "中文" else "英文English"
+                target_lang_display = "中文Chinese" if entry['target_language'] == "中文" else "英文English"
+                
+                line = (f"`{count}.` {emoji_type} {replacement_type} | "
+                       f"{source_lang_display}: `{entry['source_text']}` → "
+                       f"{target_lang_display}: `{entry['target_text']}`")
+                lines.append(line)
+                
+                # Limit to 15 entries to avoid message length issues
+                if count >= 15:
+                    lines.append(f"\n... 还有 {len(guild_glossaries) - 15} 个术语 (and {len(guild_glossaries) - 15} more)")
+                    break
             
-            # Convert language names to bilingual format
-            source_lang_display = "中文Chinese" if entry['source_language'] == "中文" else "英文English"
-            target_lang_display = "中文Chinese" if entry['target_language'] == "中文" else "英文English"
+            result = "\n".join(lines)
+            if len(result) > 1900:  # Discord message limit
+                result = result[:1900] + "...\n(消息过长已截断 Message truncated)"
             
-            line = (f"`{count}.` {emoji_type} {replacement_type} | "
-                   f"{source_lang_display}: `{entry['source_text']}` → "
-                   f"{target_lang_display}: `{entry['target_text']}`")
-            lines.append(line)
+            await interaction.response.send_message(result, ephemeral=True)
+        
+        # Delete the original bot message to clean up interface
+        try:
+            await interaction.message.delete()
+            logger.info("Deleted original bot message after listing glossaries")
+        except Exception as delete_error:
+            logger.warning(f"Failed to delete original message: {delete_error}")
             
-            # Limit to 15 entries to avoid message length issues
-            if count >= 15:
-                lines.append(f"\n... 还有 {len(guild_glossaries) - 15} 个术语 (and {len(guild_glossaries) - 15} more)")
-                break
-        
-        result = "\n".join(lines)
-        if len(result) > 1900:  # Discord message limit
-            result = result[:1900] + "...\n(消息过长已截断 Message truncated)"
-        
-        await interaction.response.send_message(result, ephemeral=True)
     
     @discord.ui.button(label="4. 删除术语 delete prompt", style=discord.ButtonStyle.danger)
     async def delete_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -309,8 +317,9 @@ class DeleteConfirmationView(discord.ui.View):
             item.disabled = True
 
 class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
-    def __init__(self):
+    def __init__(self, original_message=None):
         super().__init__()
+        self.original_message = original_message
     
     problem_description = discord.ui.TextInput(
         label="描述遇到的问题 Describe the issue",
@@ -358,6 +367,14 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
             
             await interaction.response.send_message("✅已成功提交 submitted", ephemeral=True)
             logger.info(f"Problem report successfully processed: {problem_entry}")
+            
+            # Delete the original bot message to clean up interface
+            if self.original_message:
+                try:
+                    await self.original_message.delete()
+                    logger.info("Deleted original bot message after problem report submission")
+                except Exception as delete_error:
+                    logger.warning(f"Failed to delete original message: {delete_error}")
             
         except Exception as e:
             logger.error(f"Failed to save problem report: {e}")
@@ -519,6 +536,15 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
             await self._save_glossary_entry(session)
             await interaction.response.send_message("✅术语添加成功 Glossary entry added successfully", ephemeral=True)
             logger.info(f"Glossary entry added: {session['data']}")
+            
+            # Delete the original bot message to clean up interface
+            if "original_message" in session and session["original_message"]:
+                try:
+                    await session["original_message"].delete()
+                    logger.info("Deleted original bot message after glossary addition")
+                except Exception as delete_error:
+                    logger.warning(f"Failed to delete original message: {delete_error}")
+                    
         except Exception as e:
             logger.error(f"Failed to save glossary entry: {e}")
             await interaction.response.send_message("❌保存失败 Save failed", ephemeral=True)

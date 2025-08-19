@@ -3,6 +3,15 @@ import logging
 import asyncio
 from typing import Tuple, List
 
+# Import hanzidentifier for traditional/simplified detection
+try:
+    from hanzidentifier import is_traditional, is_simplified
+    HAS_HANZIDENTIFIER = True
+except ImportError:
+    HAS_HANZIDENTIFIER = False
+    is_traditional = None
+    is_simplified = None
+
 logger = logging.getLogger(__name__)
 
 FSURE_HEAD = "\x1eFSURE\x1e"
@@ -45,9 +54,20 @@ def _has_traditional_chinese(text: str) -> bool:
     if not text:
         return False
     
-    # Check if any character in text is in our traditional characters set
+    if HAS_HANZIDENTIFIER:
+        # Use hanzidentifier library for accurate detection
+        try:
+            result = is_traditional(text)
+            if result:
+                logger.info(f"hanzidentifier detected traditional Chinese in: '{text}'")
+            return result
+        except Exception as e:
+            logger.warning(f"hanzidentifier failed: {e}, using fallback method")
+    
+    # Fallback: Check if any character in text is in our traditional characters set
     for char in text:
         if char in _TRADITIONAL_CHARS:
+            logger.info(f"Fallback method detected traditional Chinese character '{char}' in: '{text}'")
             return True
     return False
 
