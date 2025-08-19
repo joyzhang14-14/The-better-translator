@@ -1085,12 +1085,16 @@ class TranslatorBot(commands.Bot):
         is_zh = msg.channel.id == cfg["zh_channel_id"]
         if not (is_en or is_zh):
             return
-        if _is_command_text(gid, msg.content):
+        # FIRST: Apply preprocessing to original content (including traditional->simplified conversion)
+        # This must happen before ALL other logic
+        raw_original = msg.content or ""
+        processed_original = preprocess(raw_original, "zh_to_en", skip_bao_de=True)
+        
+        if _is_command_text(gid, processed_original):
             return
         
-        # Check for star patch FIRST (before updating recent message ID)
-        original_content = msg.content or ""
-        patch_result = await self._process_star_patch_if_any_with_content(original_content, msg)
+        # Check for star patch using preprocessed content
+        patch_result = await self._process_star_patch_if_any_with_content(processed_original, msg)
         if patch_result is not None:
             patched_content, original_msg_id = patch_result
         else:
@@ -1100,14 +1104,11 @@ class TranslatorBot(commands.Bot):
         self._recent_user_message[msg.author.id] = msg.id
         
         cm = guild_dicts.get(gid, {})
-        raw = msg.content or ""
-        # Apply basic preprocessing (handles 6/666 -> 厉害 conversion)
-        # Skip bao_de processing here - let translate_text handle it
-        raw = preprocess(raw, "zh_to_en", skip_bao_de=True)
+        # Use preprocessed content as the main content
+        raw = processed_original
         
         if patched_content is not None:
-            # Apply preprocessing and abbreviations to the patched result
-            # Skip bao_de processing here - let translate_text handle it
+            # Apply preprocessing to the patched result
             raw = preprocess(patched_content, "zh_to_en", skip_bao_de=True)
             
             # For star patches, edit existing messages instead of sending new ones
@@ -1131,10 +1132,9 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw, msg, lang="English")
             return
         txt = strip_banner(raw)
-        # Apply preprocess to handle traditional Chinese conversion first
-        txt = preprocess(txt, "zh_to_en", skip_bao_de=True)
+        # Raw content already preprocessed above, no need to preprocess again
         lang = await self.detect_language(txt)
-        logger.info(f"LANGUAGE_DEBUG: Original message: '{msg.content}', Processed: '{txt}', Detected language: '{lang}'")
+        logger.info(f"LANGUAGE_DEBUG: Original: '{msg.content}', Preprocessed: '{txt}', Language: '{lang}'")
         
         # Add message to history AFTER processing (since context translation is disabled)
         self._add_message_to_history(msg.guild.id, msg.channel.id, msg.author.id, txt)

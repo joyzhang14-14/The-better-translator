@@ -20,6 +20,10 @@ PROBLEM_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "problem.
 # Global storage for pending interactions
 pending_glossary_sessions: Dict[str, Dict[str, Any]] = {}
 
+# Global storage for tracking user's popup messages that should be cleaned up
+# Structure: {user_id: [message_objects]}
+user_popup_messages: Dict[int, List[discord.Message]] = {}
+
 def _save_json(path, data):
     try:
         # Ensure the directory exists
@@ -66,6 +70,38 @@ def _is_whitelist_user(config, guild_id: int, user_id: int) -> bool:
     a = _ensure_admin_block(config, gid)
     return user_id in set(a.get("allowed_user_ids", []))
 
+async def _cleanup_old_popups(user_id: int):
+    """Clean up old popup messages for a user (except main selection message)"""
+    if user_id not in user_popup_messages:
+        return
+    
+    messages_to_delete = user_popup_messages[user_id][:]  # Copy the list
+    messages_to_keep = []  # Keep track of main selection messages
+    
+    for message in messages_to_delete:
+        try:
+            # Don't delete the main selection message
+            if message.content and "请选择操作类型 Please select operation type:" in message.content:
+                messages_to_keep.append(message)  # Keep this message
+                continue
+            await message.delete()
+            logger.info(f"Deleted old popup message for user {user_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete old popup message: {e}")
+    
+    # Update the list to only keep the main selection messages
+    user_popup_messages[user_id] = messages_to_keep
+
+def _track_popup_message(user_id: int, message: discord.Message):
+    """Track a popup message for later cleanup"""
+    if user_id not in user_popup_messages:
+        user_popup_messages[user_id] = []
+    user_popup_messages[user_id].append(message)
+    
+    # Keep only the last 5 messages per user to prevent memory bloat
+    if len(user_popup_messages[user_id]) > 5:
+        user_popup_messages[user_id] = user_popup_messages[user_id][-5:]
+
 def _ensure_pt_commands(cmds):
     try:
         if not os.path.exists(PASSTHROUGH_PATH):
@@ -89,12 +125,18 @@ class ErrorSelectionView(discord.ui.View):
     
     @discord.ui.button(label="1. 报告翻译逻辑错误 report bot logical bug", style=discord.ButtonStyle.red)
     async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Clean up old popups before showing modal
+        await _cleanup_old_popups(interaction.user.id)
+        
         # Create and send the problem report modal, don't pass main message for deletion
         modal = ProblemReportModal(None)  # Don't delete main message
         await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="2. 添加术语 add prompt", style=discord.ButtonStyle.green)
     async def add_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Clean up old popups before showing new one
+        await _cleanup_old_popups(interaction.user.id)
+        
         # Start the glossary addition process
         session_id = str(uuid.uuid4())
         guild_id = str(interaction.guild.id)
@@ -112,20 +154,26 @@ class ErrorSelectionView(discord.ui.View):
         
         # Show mandatory/optional selection
         view = MandatorySelectionView(session_id)
-        await interaction.response.send_message(
+        message = await interaction.response.send_message(
             "添加术语为强制替换还是选择性替换\nIs adding a prompt a mandatory or optional replacement?",
             view=view,
             ephemeral=True
         )
+        
+        # Track this popup message for cleanup
+        _track_popup_message(interaction.user.id, await interaction.original_response())
     
     @discord.ui.button(label="3. 查看术语 list prompts", style=discord.ButtonStyle.secondary)
     async def list_glossaries(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Clean up old popups before showing new one
+        await _cleanup_old_popups(interaction.user.id)
+        
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
         guild_glossaries = glossaries.get(guild_id, {})
         
         if not guild_glossaries:
-            await interaction.response.send_message("📋 本群组暂无术语 No glossaries in this guild", ephemeral=True)
+            message = await interaction.response.send_message("📋 本群组暂无术语 No glossaries in this guild", ephemeral=True)
         else:
             # Format glossaries list
             lines = ["📋 **术语列表 Glossary List**\n"]
@@ -155,17 +203,23 @@ class ErrorSelectionView(discord.ui.View):
             
             await interaction.response.send_message(result, ephemeral=True)
         
-        # Don't delete the main selection message, it should remain for future use
+        # Track this popup message for cleanup
+        _track_popup_message(interaction.user.id, await interaction.original_response())
             
     
     @discord.ui.button(label="4. 删除术语 delete prompt", style=discord.ButtonStyle.danger)
     async def delete_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Clean up old popups before showing new one
+        await _cleanup_old_popups(interaction.user.id)
+        
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
         guild_glossaries = glossaries.get(guild_id, {})
         
         if not guild_glossaries:
             await interaction.response.send_message("❌ 本群组暂无术语可删除 No glossaries to delete in this guild", ephemeral=True)
+            # Track this popup message for cleanup
+            _track_popup_message(interaction.user.id, await interaction.original_response())
             return
         
         # Create selection dropdown
@@ -175,6 +229,9 @@ class ErrorSelectionView(discord.ui.View):
             view=view,
             ephemeral=True
         )
+        
+        # Track this popup message for cleanup
+        _track_popup_message(interaction.user.id, await interaction.original_response())
     
     async def on_timeout(self):
         # Disable all buttons when timed out
@@ -236,6 +293,8 @@ class DeleteGlossarySelect(discord.ui.Select):
         
         if selected_entry_id not in guild_glossaries:
             await interaction.response.send_message("❌ 术语不存在 Glossary not found", ephemeral=True)
+            # Track this popup message for cleanup
+            _track_popup_message(interaction.user.id, await interaction.original_response())
             return
         
         # Get the entry details for confirmation
@@ -258,6 +317,9 @@ class DeleteGlossarySelect(discord.ui.Select):
             view=view,
             ephemeral=True
         )
+        
+        # Track this popup message for cleanup
+        _track_popup_message(interaction.user.id, await interaction.original_response())
 
 class DeleteConfirmationView(discord.ui.View):
     def __init__(self, guild_id: str, entry_id: str, entry: dict, *, timeout=300):
@@ -299,13 +361,20 @@ class DeleteConfirmationView(discord.ui.View):
                 logger.info(f"Glossary entry deleted: {self.entry}")
             else:
                 await interaction.response.send_message("❌ 术语不存在 Glossary not found", ephemeral=True)
+                
+            # Track this popup message for cleanup
+            _track_popup_message(interaction.user.id, await interaction.original_response())
         except Exception as e:
             logger.error(f"Failed to delete glossary entry: {e}")
             await interaction.response.send_message("❌ 删除失败 Delete failed", ephemeral=True)
+            # Track this popup message for cleanup
+            _track_popup_message(interaction.user.id, await interaction.original_response())
     
     @discord.ui.button(label="取消 Cancel", style=discord.ButtonStyle.secondary)
     async def cancel_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("❌ 已取消删除 Delete cancelled", ephemeral=True)
+        # Track this popup message for cleanup
+        _track_popup_message(interaction.user.id, await interaction.original_response())
     
     async def on_timeout(self):
         for item in self.children:
@@ -407,6 +476,8 @@ class MandatorySelectionView(discord.ui.View):
             content="需识别文字的语言\nThe language of the text to be recognized",
             view=view
         )
+        
+        # The message is edited, so we already have it tracked
     
     async def on_timeout(self):
         if self.session_id in pending_glossary_sessions:
@@ -473,6 +544,9 @@ class SourceTextModal(discord.ui.Modal, title="输入识别文字 Input Recognit
             view=view,
             ephemeral=True
         )
+        
+        # Track this popup message for cleanup
+        _track_popup_message(interaction.user.id, await interaction.original_response())
 
 class TargetLanguageSelectionView(discord.ui.View):
     def __init__(self, session_id: str, *, timeout=600):
@@ -532,17 +606,14 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
             await interaction.response.send_message("✅术语添加成功 Glossary entry added successfully", ephemeral=True)
             logger.info(f"Glossary entry added: {session['data']}")
             
-            # Delete the original bot message to clean up interface
-            if "original_message" in session and session["original_message"]:
-                try:
-                    await session["original_message"].delete()
-                    logger.info("Deleted original bot message after glossary addition")
-                except Exception as delete_error:
-                    logger.warning(f"Failed to delete original message: {delete_error}")
+            # Track this popup message for cleanup
+            _track_popup_message(interaction.user.id, await interaction.original_response())
                     
         except Exception as e:
             logger.error(f"Failed to save glossary entry: {e}")
             await interaction.response.send_message("❌保存失败 Save failed", ephemeral=True)
+            # Track this popup message for cleanup
+            _track_popup_message(interaction.user.id, await interaction.original_response())
         finally:
             # Clean up session
             if self.session_id in pending_glossary_sessions:
@@ -589,13 +660,19 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         if not can_use(ctx.guild, ctx.author):
             return await ctx.reply("❌需要权限 Need permission", mention_author=False)
         
+        # Clean up old popups before showing main selection
+        await _cleanup_old_popups(ctx.author.id)
+        
         # Create and send the error selection view
         view = ErrorSelectionView()
-        await ctx.reply(
+        message = await ctx.reply(
             "请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
+        
+        # Track this main selection message (it will be preserved during cleanup)
+        _track_popup_message(ctx.author.id, message)
 
     @bot.command(name="setrequire")
     async def setrequire(ctx, mode: str):
@@ -754,6 +831,31 @@ async def _cleanup_expired_sessions():
             for session_id in expired_sessions:
                 del pending_glossary_sessions[session_id]
                 logger.info(f"Cleaned up expired session: {session_id}")
+            
+            # Also clean up expired popup messages (older than 30 minutes)
+            expired_users = []
+            for user_id, messages in user_popup_messages.items():
+                # Filter out messages that are too old
+                valid_messages = []
+                for message in messages:
+                    try:
+                        # If message is older than 30 minutes, don't keep it
+                        if hasattr(message, 'created_at'):
+                            message_age = (current_time - message.created_at.timestamp())
+                            if message_age < 1800:  # 30 minutes
+                                valid_messages.append(message)
+                    except:
+                        # If we can't check the message age, remove it
+                        pass
+                
+                if valid_messages:
+                    user_popup_messages[user_id] = valid_messages
+                else:
+                    expired_users.append(user_id)
+            
+            for user_id in expired_users:
+                del user_popup_messages[user_id]
+                logger.info(f"Cleaned up expired popup messages for user: {user_id}")
             
             await asyncio.sleep(60)  # Check every minute
         except Exception as e:
