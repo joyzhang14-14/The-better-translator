@@ -2,8 +2,8 @@
                     DISCORD TRANSLATOR BOT - VERSION CHANGELOG
 ===============================================================================
 
-Version: 2.1.1
-Release Date: 2025-01-19
+Version: 2.1.4
+Release Date: 2025-01-19  
 Type: Bug Fix Release
 
 ===============================================================================
@@ -31,6 +31,37 @@ MAJOR FEATURES ADDED IN v2.1.0:
    - Clear status indication for current detection mode
    - Comprehensive user guidance on speed vs accuracy trade-offs
    - Seamless integration with existing command structure
+
+===============================================================================
+BUG FIXES IN v2.1.4:
+===============================================================================
+
+1. RELIABLE MESSAGE CLEANUP SYSTEM
+   - Redesigned popup message tracking from list-based to dictionary-based structure
+   - Fixed long-term usage issues where message deletion would fail after multiple interactions
+   - Improved memory management by tracking only main_message and last_popup per user
+   - Enhanced logging for better debugging of message cleanup operations
+   - More robust handling of expired or invalid message references
+
+===============================================================================
+BUG FIXES IN v2.1.3:
+===============================================================================
+
+1. MESSAGE INTERACTION OPTIMIZATION
+   - Changed from edit_message to send_message for cleaner UI transitions
+   - Bot now sends fresh ephemeral messages instead of editing existing ones
+   - Improved user experience with direct popup messages rather than message replies
+   - Eliminates visual artifacts from message editing operations
+
+===============================================================================
+BUG FIXES IN v2.1.2:
+===============================================================================
+
+1. IMMEDIATE BOT MESSAGE CLEANUP
+   - Fixed bot message cleanup to delete previous popup messages immediately upon user interaction
+   - Changed from bulk deletion to targeted deletion of most recent non-main message
+   - Improved user experience with instant UI cleanup when proceeding to next steps
+   - Enhanced message tracking to prevent accumulation of undeleted popup messages
 
 ===============================================================================
 BUG FIXES IN v2.1.1:
@@ -116,7 +147,7 @@ VERSION NUMBERING SYSTEM:
 - Major.Minor.Patch format (e.g., 2.1.1)
 - Minor version (+1) for major feature additions
 - Patch version (+1) for bug fixes and small improvements
-- Current progression: 2.0.0 → 2.1.0 → 2.1.1
+- Current progression: 2.0.0 → 2.1.0 → 2.1.1 → 2.1.2 → 2.1.3 → 2.1.4
 
 CODE QUALITY IMPROVEMENTS:
 - Enhanced debug logging throughout glossary system

@@ -21,8 +21,8 @@ PROBLEM_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "problem.
 pending_glossary_sessions: Dict[str, Dict[str, Any]] = {}
 
 # Global storage for tracking user's popup messages that should be cleaned up
-# Structure: {user_id: [message_objects]}
-user_popup_messages: Dict[int, List[discord.Message]] = {}
+# Structure: {user_id: {"last_popup": message_object, "main_message": message_object}}
+user_popup_messages: Dict[int, Dict[str, discord.Message]] = {}
 
 def _save_json(path, data):
     try:
@@ -71,36 +71,37 @@ def _is_whitelist_user(config, guild_id: int, user_id: int) -> bool:
     return user_id in set(a.get("allowed_user_ids", []))
 
 async def _cleanup_old_popups(user_id: int):
-    """Clean up old popup messages for a user (except main selection message)"""
+    """Clean up the most recent popup message for immediate deletion"""
     if user_id not in user_popup_messages:
         return
     
-    messages_to_delete = user_popup_messages[user_id][:]  # Copy the list
-    messages_to_keep = []  # Keep track of main selection messages
+    user_messages = user_popup_messages[user_id]
     
-    for message in messages_to_delete:
+    # Delete the last popup message if it exists
+    if "last_popup" in user_messages:
         try:
-            # Don't delete the main selection message (check for version prefix)
-            if message.content and "请选择操作类型 Please select operation type:" in message.content:
-                messages_to_keep.append(message)  # Keep this message
-                continue
-            await message.delete()
-            logger.info(f"Deleted old popup message for user {user_id}")
+            last_popup = user_messages["last_popup"]
+            await last_popup.delete()
+            logger.info(f"Deleted last popup message for user {user_id}: {last_popup.content[:50] if last_popup.content else 'No content'}...")
+            del user_messages["last_popup"]
         except Exception as e:
-            logger.warning(f"Failed to delete old popup message: {e}")
-    
-    # Update the list to only keep the main selection messages
-    user_popup_messages[user_id] = messages_to_keep
+            logger.warning(f"Failed to delete last popup message: {e}")
+            # Remove the reference even if deletion failed
+            if "last_popup" in user_messages:
+                del user_messages["last_popup"]
 
 def _track_popup_message(user_id: int, message: discord.Message):
     """Track a popup message for later cleanup"""
     if user_id not in user_popup_messages:
-        user_popup_messages[user_id] = []
-    user_popup_messages[user_id].append(message)
+        user_popup_messages[user_id] = {}
     
-    # Keep only the last 5 messages per user to prevent memory bloat
-    if len(user_popup_messages[user_id]) > 5:
-        user_popup_messages[user_id] = user_popup_messages[user_id][-5:]
+    # Check if this is the main selection message
+    if message.content and "请选择操作类型 Please select operation type:" in message.content:
+        user_popup_messages[user_id]["main_message"] = message
+        logger.info(f"Tracking main selection message for user {user_id}")
+    else:
+        user_popup_messages[user_id]["last_popup"] = message
+        logger.info(f"Tracking popup message for user {user_id}: {message.content[:50] if message.content else 'No content'}...")
 
 def _ensure_pt_commands(cmds):
     try:
@@ -574,14 +575,16 @@ class MandatorySelectionView(discord.ui.View):
         session["step"] = "source_language_selection"
         session["timestamp"] = time.time()
         
-        # Show source language selection and clean up current message
+        # Show source language selection
         view = SourceLanguageSelectionView(self.session_id)
-        await interaction.response.edit_message(
-            content="需识别文字的语言\nThe language of the text to be recognized",
-            view=view
+        await interaction.response.send_message(
+            "需识别文字的语言\nThe language of the text to be recognized",
+            view=view,
+            ephemeral=True
         )
         
-        # The message is edited, so we already have it tracked
+        # Track this popup message for cleanup
+        _track_popup_message(interaction.user.id, await interaction.original_response())
     
     async def on_timeout(self):
         if self.session_id in pending_glossary_sessions:
@@ -768,11 +771,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
-        # VERSION: v2.1.1 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.1.4 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "v2.1.1 请选择操作类型 Please select operation type:",
+            "v2.1.4 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
@@ -940,18 +943,29 @@ async def _cleanup_expired_sessions():
             
             # Also clean up expired popup messages (older than 30 minutes)
             expired_users = []
-            for user_id, messages in user_popup_messages.items():
-                # Filter out messages that are too old
-                valid_messages = []
-                for message in messages:
+            for user_id, user_messages in user_popup_messages.items():
+                valid_messages = {}
+                
+                # Check main message
+                if "main_message" in user_messages:
                     try:
-                        # If message is older than 30 minutes, don't keep it
+                        message = user_messages["main_message"]
                         if hasattr(message, 'created_at'):
                             message_age = (current_time - message.created_at.timestamp())
                             if message_age < 1800:  # 30 minutes
-                                valid_messages.append(message)
+                                valid_messages["main_message"] = message
                     except:
-                        # If we can't check the message age, remove it
+                        pass
+                
+                # Check last popup message
+                if "last_popup" in user_messages:
+                    try:
+                        message = user_messages["last_popup"]
+                        if hasattr(message, 'created_at'):
+                            message_age = (current_time - message.created_at.timestamp())
+                            if message_age < 1800:  # 30 minutes
+                                valid_messages["last_popup"] = message
+                    except:
                         pass
                 
                 if valid_messages:

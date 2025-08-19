@@ -25,7 +25,8 @@
       "Bash(for f in bot.py translator.py gpt_handler.py mirror_manager.py utils.py message_handler.py preprocess.py joy_cmds.py)",
       "Bash(done)",
       "Bash(del abbreviations.json)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(del test_preprocess_order.py)"
     ],
     "deny": [],
     "ask": [],
