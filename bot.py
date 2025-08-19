@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 BASE = os.path.dirname(__file__)
 CONFIG_PATH = os.path.join(BASE, "config.json")
 DICTIONARY_PATH = os.path.join(BASE, "dictionary.json")
-ABBREV_PATH = os.path.join(BASE, "abbreviations.json")
 PASSTHROUGH_PATH = os.path.join(BASE, "passthrough.json")
 
 def _load_json_or(path: str, fallback):
@@ -76,7 +75,6 @@ else:
     logger.error("MISSING: Discord Token not found!")
 # These will be loaded asynchronously in setup_hook
 guild_dicts = {}
-guild_abbrs = {"default": {}}
 passthrough_cfg = {"default": {"commands": [], "fillers": []}}
 
 REPLY_ICON_DEFAULT = config.get("reply_icon", "↪")
@@ -205,40 +203,6 @@ def _apply_dictionary(text: str, direction: str, custom_map: dict) -> str:
             s = pat.sub(zh, s)
     return s
 
-def _apply_abbreviations(text: str, gid: str) -> str:
-    d = _merge_default(guild_abbrs, gid)
-    if not d:
-        return text or ""
-    s = text or ""
-
-    def is_url_context(idx: int) -> bool:
-        left = max(0, idx - 8)
-        right = min(len(s), idx + 16)
-        seg = s[left:right]
-        return bool(URL_RE.search(seg))
-
-    for k, v in sorted(d.items(), key=lambda kv: len(kv[0]), reverse=True):
-        if not k:
-            continue
-        end_zh = k.endswith("的") or v.endswith("的") or bool(re.search(r"[\u4e00-\u9fff]", k + v))
-        if end_zh:
-            pat = re.compile(re.escape(k))
-            def rep(m: re.Match):
-                i = m.end()
-                if i < len(s):
-                    nxt = s[i]
-                    if URL_RE.match(s[i:]):
-                        return m.group(0)
-                    if re.match(r"[A-Za-z0-9_]", nxt):
-                        return m.group(0)
-                return v
-            s = pat.sub(rep, s)
-        else:
-            pat = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(k)}(?![A-Za-z0-9_])")
-            def rep2(m: re.Match):
-                return v if not is_url_context(m.start()) else m.group(0)
-            s = pat.sub(rep2, s)
-    return s
 
 class TranslatorBot(commands.Bot):
     def __init__(self):
@@ -292,66 +256,20 @@ class TranslatorBot(commands.Bot):
             g.pop(k, None)
 
     async def setup_hook(self):
-        global guild_dicts, guild_abbrs, passthrough_cfg
+        global guild_dicts, passthrough_cfg
         
         # Load persistent data
         logger.info("Loading persistent data...")
         guild_dicts.update(await storage.load_json("dictionary", {}))
         
-        # Hardcoded default abbreviations as fallback
-        hardcoded_defaults = {
-            "default": {
-                "wc": "卧槽", "nb": "牛逼", "666": "厉害", "xswl": "笑死我了",
-                "glhf": "good luck have fun", "afk": "away from keyboard", 
-                "brb": "be right back", "idk": "I don't know", "idc": "I don't care",
-                "ikr": "I know right", "imo": "in my opinion", "btw": "by the way",
-                "tbh": "to be honest", "ngl": "not gonna lie", "lmk": "let me know",
-                "omg": "oh my god", "wtf": "what the fuck", "wth": "what the hell",
-                "smh": "shaking my head", "lol": "laughing out loud", 
-                "lmao": "laughing my ass off", "nvm": "never mind", 
-                "asap": "as soon as possible", "aka": "also known as",
-                "irl": "in real life", "dm": "direct message", "np": "no problem",
-                "ty": "thank you", "thx": "thanks", "pls": "please", "plz": "please",
-                "rn": "right now", "ppl": "people", "u": "you", "ur": "your",
-                "ya": "yeah", "yea": "yeah", "bc": "because", "cuz": "because",
-                "tho": "though", "fr": "for real", "rip": "rest in peace", "jk": "just kidding"
-            }
-        }
-        
-        # Load abbreviations from local file first (for defaults), then merge with cloud data
-        logger.info(f"Attempting to load abbreviations from: {ABBREV_PATH}")
-        logger.info(f"File exists: {os.path.exists(ABBREV_PATH)}")
-        logger.info(f"Current working directory: {os.getcwd()}")
-        logger.info(f"BASE directory: {BASE}")
-        
-        local_abbrs = _load_json_or(ABBREV_PATH, hardcoded_defaults)
-        cloud_abbrs = await storage.load_json("abbreviations", {})
-        
-        # Debug logging
-        logger.info(f"Local abbreviations loaded: {len(local_abbrs)} groups")
-        logger.info(f"Local default abbreviations: {len(local_abbrs.get('default', {}))}")
-        logger.info(f"Cloud abbreviations loaded: {len(cloud_abbrs)} groups")
-        
-        # Merge: start with local defaults, then add cloud data
-        guild_abbrs.clear()
-        guild_abbrs.update(local_abbrs)
-        
-        # Merge cloud data into local data (cloud data for specific guilds can override)
-        for guild_id, abbr_data in cloud_abbrs.items():
-            if guild_id == "default":
-                # For default, merge instead of replace to keep local defaults
-                guild_abbrs["default"].update(abbr_data)
-            else:
-                # For guild-specific data, use cloud version
-                guild_abbrs[guild_id] = abbr_data
-        
         # Load passthrough from local file only (not from cloud storage)
         passthrough_cfg.update(_load_json_or(PASSTHROUGH_PATH, {"default": {"commands": [], "fillers": []}}))
         
+        # Load glossaries from cloud
+        from glossary_handler import glossary_handler
+        await glossary_handler.load_from_cloud()
+        
         logger.info(f"Loaded {len(guild_dicts)} guilds in dictionary")
-        default_abbr_count = len(guild_abbrs.get("default", {}))
-        logger.info(f"Final result: {len(guild_abbrs)} abbreviation groups with {default_abbr_count} default abbreviations")
-        logger.info(f"Default abbreviations sample: {list(guild_abbrs.get('default', {}).keys())[:10]}")
         
         self._mirror_load()
         self.session = aiohttp.ClientSession()
@@ -567,8 +485,6 @@ class TranslatorBot(commands.Bot):
             return fallback_result
 
 
-    def _text_after_abbrev_pre(self, s: str, gid: str) -> str:
-        return _apply_abbreviations(s or "", gid)
 
     def _add_message_to_history(self, guild_id: int, channel_id: int, user_id: int, content: str):
         """Add a message to user's history for context-aware translation"""
@@ -659,9 +575,9 @@ class TranslatorBot(commands.Bot):
         cm = guild_dicts.get(gid_str, {})
         ref_lang = await self.detect_language(raw)
         if target_lang == "Chinese" and ref_lang == "English":
-            show = await self.translator.translate_text(raw, "en_to_zh", cm)
+            show = await self.translator.translate_text(raw, "en_to_zh", cm, guild_id=gid_str)
         elif target_lang == "English" and ref_lang == "Chinese":
-            show = await self.translator.translate_text(raw, "zh_to_en", cm)
+            show = await self.translator.translate_text(raw, "zh_to_en", cm, guild_id=gid_str)
         else:
             show = raw
         return jump, show, False
@@ -985,7 +901,7 @@ class TranslatorBot(commands.Bot):
             logger.info(f"DEBUG: Star patch detected language: '{lang}' for text: '{txt}'")
             
             async def to_target(text: str, direction: str) -> str:
-                tr = await self.translator.translate_text(text, direction, cm)
+                tr = await self.translator.translate_text(text, direction, cm, guild_id=gid)
                 if tr == "/":
                     return text
                 return tr
@@ -1094,13 +1010,11 @@ class TranslatorBot(commands.Bot):
         # Apply basic preprocessing (handles 6/666 -> 厉害 conversion)
         # Skip bao_de processing here - let translate_text handle it
         raw = preprocess(raw, "zh_to_en", skip_bao_de=True)
-        raw = self._text_after_abbrev_pre(raw, gid)
         
         if patched_content is not None:
             # Apply preprocessing and abbreviations to the patched result
             # Skip bao_de processing here - let translate_text handle it
             raw = preprocess(patched_content, "zh_to_en", skip_bao_de=True)
-            raw = self._text_after_abbrev_pre(raw, gid)
             
             # For star patches, edit existing messages instead of sending new ones
             await self._handle_star_patch_edit(raw, msg, cfg, gid, cm, original_msg_id)
@@ -1141,7 +1055,7 @@ class TranslatorBot(commands.Bot):
             logger.info(f"DEBUG: Using message history context for user {msg.author.id}: {len(history_messages)} messages")
         
         async def to_target(text: str, direction: str) -> str:
-            tr = await self.translator.translate_text(text, direction, cm, context=reply_context, history_messages=history_messages)
+            tr = await self.translator.translate_text(text, direction, cm, context=reply_context, history_messages=history_messages, guild_id=gid, user_name=msg.author.display_name)
             if tr == "/":
                 return text
             return tr
@@ -1225,8 +1139,8 @@ def main():
         config=config,
         guild_dicts=guild_dicts,
         dictionary_path=DICTIONARY_PATH,
-        guild_abbrs=guild_abbrs,
-        abbr_path=ABBREV_PATH,
+        guild_abbrs={},
+        abbr_path="",
         can_use=lambda g, m: bot.is_admin_user(g, m),
     )
     print("bot running")

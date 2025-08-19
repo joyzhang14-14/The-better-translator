@@ -23,7 +23,9 @@
       "Bash(mv:*)",
       "Bash(find:*)",
       "Bash(for f in bot.py translator.py gpt_handler.py mirror_manager.py utils.py message_handler.py preprocess.py joy_cmds.py)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(del abbreviations.json)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": [],

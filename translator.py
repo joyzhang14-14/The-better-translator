@@ -2,6 +2,7 @@ import asyncio
 import logging
 import deepl
 from preprocess import preprocess, preprocess_with_emoji_extraction, restore_emojis, FSURE_HEAD, FSURE_SEP, has_bao_de_pattern
+from glossary_handler import glossary_handler
 
 logger = logging.getLogger(__name__)
 
@@ -84,38 +85,91 @@ class Translator:
             processed_text = self._apply_dictionary(text, direction, custom_map) if custom_map else text
             return preprocess(processed_text, direction)
 
-    async def translate_text(self, text: str, direction: str, custom_map: dict, context: str = None, history_messages: list = None) -> str:
+    async def translate_text(self, text: str, direction: str, custom_map: dict, context: str = None, history_messages: list = None, guild_id: str = None, user_name: str = "用户") -> str:
         # Priority: explicit reply context > message history context > normal translation
         if context:
-            return await self._translate_with_context(text, direction, custom_map, context)
+            return await self._translate_with_context(text, direction, custom_map, context, guild_id)
         elif history_messages:
-            return await self._translate_with_message_history(text, direction, custom_map, history_messages)
+            return await self._translate_with_message_history(text, direction, custom_map, history_messages, guild_id)
         
         # Extract emojis from input text before any processing
         text_without_emojis, extracted_emojis = preprocess_with_emoji_extraction(text, direction, skip_bao_de=True)
         
+        # Apply dictionary first (legacy dictionary support)
+        dict_applied_text = self._apply_dictionary(text_without_emojis, direction, custom_map)
+        
+        # Glossary processing
+        if guild_id:
+            # Determine source language for glossary matching
+            if direction == "zh_to_en":
+                source_lang = "中文"
+            else:
+                source_lang = "英文"
+            
+            # Apply mandatory glossary replacements first
+            glossary_processed_text = glossary_handler.apply_mandatory_replacements(dict_applied_text, guild_id, source_lang)
+            
+            # Check for GPT-based glossary candidates
+            gpt_candidates = glossary_handler.get_gpt_candidates(glossary_processed_text, guild_id, source_lang)
+            
+            if gpt_candidates:
+                # Get context for GPT judgment (use history messages or empty list)
+                context_for_gpt = history_messages if history_messages else []
+                
+                for source_term, entry in gpt_candidates:
+                    should_replace = await self.gpt_handler.judge_glossary_replacement(
+                        glossary_processed_text, entry, context_for_gpt, user_name
+                    )
+                    
+                    if should_replace:
+                        # Apply replacement
+                        if entry["source_language"] == entry["target_language"]:
+                            # Same language replacement
+                            if source_lang == "英文":
+                                import re
+                                pattern_escaped = re.escape(source_term)
+                                boundary_pattern = rf"(?<![A-Za-z0-9]){pattern_escaped}(?![A-Za-z0-9])"
+                                glossary_processed_text = re.sub(boundary_pattern, entry["target_text"], glossary_processed_text, flags=re.IGNORECASE)
+                            else:
+                                glossary_processed_text = glossary_processed_text.replace(source_term, entry["target_text"])
+                        else:
+                            # Cross-language replacement - use placeholder
+                            placeholder = f"__GLOSSARY_{len(source_term)}_{hash(source_term)}__"
+                            if source_lang == "英文":
+                                import re
+                                pattern_escaped = re.escape(source_term)
+                                boundary_pattern = rf"(?<![A-Za-z0-9]){pattern_escaped}(?![A-Za-z0-9])"
+                                glossary_processed_text = re.sub(boundary_pattern, placeholder, glossary_processed_text, flags=re.IGNORECASE)
+                            else:
+                                glossary_processed_text = glossary_processed_text.replace(source_term, placeholder)
+                            
+                            # Store for post-translation replacement
+                            if not hasattr(glossary_handler, '_pending_replacements'):
+                                glossary_handler._pending_replacements = {}
+                            glossary_handler._pending_replacements[placeholder] = entry["target_text"]
+            
+            processed_text = glossary_processed_text
+        else:
+            processed_text = dict_applied_text
+        
+        # Continue with existing bao_de logic for Chinese to English
         if direction == "zh_to_en":
-            original_text = self._apply_dictionary(text_without_emojis, "zh_to_en", custom_map)
             gpt_processed = False
-            # Debug logging
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"DEBUG translate_text: input='{text}', without_emojis='{text_without_emojis}', after_dict='{original_text}'")
-            if has_bao_de_pattern(original_text):
-                logger.info(f"DEBUG: Detected bao_de pattern in '{original_text}', calling GPT")
-                gpt_result = await self.gpt_handler.judge_bao_de(original_text)
-                logger.info(f"DEBUG: GPT result for '{original_text}': '{gpt_result}'")
+            logger.info(f"DEBUG translate_text: input='{text}', processed='{processed_text}'")
+            if has_bao_de_pattern(processed_text):
+                logger.info(f"DEBUG: Detected bao_de pattern in '{processed_text}', calling GPT")
+                gpt_result = await self.gpt_handler.judge_bao_de(processed_text)
+                logger.info(f"DEBUG: GPT result for '{processed_text}': '{gpt_result}'")
                 if gpt_result != "NOT_FOR_SURE":
                     logger.info(f"DEBUG: Returning GPT result: '{gpt_result}'")
-                    # Restore emojis to GPT result
-                    return restore_emojis(gpt_result, extracted_emojis)
+                    # Apply cross-language glossary replacements to GPT result if needed
+                    final_result = glossary_handler.restore_cross_language_replacements(gpt_result)
+                    return restore_emojis(final_result, extracted_emojis)
                 else:
                     logger.info(f"DEBUG: GPT said NOT_FOR_SURE, continuing with normal processing")
                     gpt_processed = True
-            else:
-                logger.info(f"DEBUG: No bao_de pattern detected in '{original_text}'")
             
-            pre = preprocess(original_text, "zh_to_en", skip_bao_de=gpt_processed)
+            pre = preprocess(processed_text, "zh_to_en", skip_bao_de=gpt_processed)
             if pre.startswith(FSURE_HEAD):
                 payload = pre[len(FSURE_HEAD):]
                 if FSURE_SEP in payload:
@@ -129,18 +183,22 @@ class Translator:
                     out = out.strip().rstrip(".") + " for sure"
                     if en_tail and en_tail != "/":
                         out = out + ", " + en_tail
-                # Restore emojis to output
-                return restore_emojis(out or "/", extracted_emojis)
+                # Apply cross-language glossary replacements if needed
+                final_result = glossary_handler.restore_cross_language_replacements(out or "/")
+                return restore_emojis(final_result, extracted_emojis)
+            
             translated_result = await self._call_translate(pre, "Chinese", "English")
-            # Restore emojis to translated result
-            return restore_emojis(translated_result, extracted_emojis)
+            # Apply cross-language glossary replacements if needed
+            final_result = glossary_handler.restore_cross_language_replacements(translated_result)
+            return restore_emojis(final_result, extracted_emojis)
         else:
-            pre = preprocess(self._apply_dictionary(text_without_emojis, "en_to_zh", custom_map), "en_to_zh")
+            pre = preprocess(processed_text, "en_to_zh")
             translated_result = await self._call_translate(pre, "English", "Chinese (Simplified)")
-            # Restore emojis to translated result
-            return restore_emojis(translated_result, extracted_emojis)
+            # Apply cross-language glossary replacements if needed
+            final_result = glossary_handler.restore_cross_language_replacements(translated_result)
+            return restore_emojis(final_result, extracted_emojis)
 
-    async def _translate_with_context(self, text: str, direction: str, custom_map: dict, context: str) -> str:
+    async def _translate_with_context(self, text: str, direction: str, custom_map: dict, context: str, guild_id: str = None) -> str:
         try:
             # Extract emojis from input text before processing
             text_without_emojis, extracted_emojis = preprocess_with_emoji_extraction(text, direction, skip_bao_de=True)
@@ -206,7 +264,7 @@ class Translator:
                 fallback_result = await self._call_translate(pre, "English", "Chinese (Simplified)")
                 return restore_emojis(fallback_result, extracted_emojis)
 
-    async def _translate_with_message_history(self, text: str, direction: str, custom_map: dict, history_messages: list) -> str:
+    async def _translate_with_message_history(self, text: str, direction: str, custom_map: dict, history_messages: list, guild_id: str = None) -> str:
         """Translate text with message history context for better fluency"""
         try:
             # Extract emojis from current text

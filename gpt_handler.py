@@ -1,5 +1,6 @@
 import logging
 import re
+from typing import List, Dict, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -146,3 +147,76 @@ class GPTHandler:
         except Exception as e:
             logger.error(f"GPT bao_de judgment failed: {e}")
             return "NOT_FOR_SURE"
+
+    async def judge_glossary_replacement(self, source_text: str, entry: Dict, context_messages: List[str], current_user: str) -> bool:
+        """
+        Judge whether a glossary entry should be replaced based on context
+        Returns True if replacement should happen, False otherwise
+        """
+        source_lang = entry["source_language"]
+        target_lang = entry["target_language"]
+        source_term = entry["source_text"]
+        target_term = entry["target_text"]
+        
+        # Build context string
+        context_lines = []
+        for i, msg in enumerate(context_messages, 1):
+            context_lines.append(f"用户{i}: {msg}")
+        
+        current_line = f"用户{len(context_messages) + 1}: {source_text}"
+        context_lines.append(current_line)
+        
+        context_text = "\n".join(context_lines)
+        
+        # Create different prompts based on language direction
+        if source_lang == "中文" and target_lang == "英文":
+            # Chinese to English
+            sys_prompt = (
+                f"分析对话内容和语境，判断用户最后一句话中的"{source_term}"是否应该被替换为英文"{target_term}"。"
+                f"请根据对话的逻辑、语境和用户的意图来判断。"
+                f"只回答"需要替换"或"不需要替换"，不要其他解释。"
+            )
+        elif source_lang == "英文" and target_lang == "中文":
+            # English to Chinese  
+            sys_prompt = (
+                f"Analyze the conversation content and context to determine if the '{source_term}' in the user's last message should be replaced with Chinese '{target_term}'. "
+                f"Please judge based on the conversation logic, context, and user's intent. "
+                f"Only answer '需要替换' or '不需要替换', no other explanation."
+            )
+        elif source_lang == "中文" and target_lang == "中文":
+            # Chinese to Chinese
+            sys_prompt = (
+                f"分析对话内容和语境，判断用户最后一句话中的"{source_term}"是否应该被替换为"{target_term}"。"
+                f"请根据对话的逻辑、语境和用户的意图来判断这种替换是否合适。"
+                f"只回答"需要替换"或"不需要替换"，不要其他解释。"
+            )
+        else:
+            # English to English
+            sys_prompt = (
+                f"Analyze the conversation content and context to determine if the '{source_term}' in the user's last message should be replaced with '{target_term}'. "
+                f"Please judge based on the conversation logic, context, and user's intent. "
+                f"Only answer '需要替换' or '不需要替换', no other explanation."
+            )
+        
+        usr_prompt = f"这是一份对话内容，你将会根据对话的逻辑和内容判断：\n{context_text}\n\n你觉得对话中{current_user}说的"{source_term}"需不需要被替换成（{target_lang}）"{target_term}"？"
+        
+        try:
+            if not self.openai_client:
+                logger.info("No OpenAI client available, defaulting to no replacement")
+                return False
+            
+            logger.info(f"GPT glossary judgment for '{source_term}' -> '{target_term}'")
+            r = await self.openai_client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": usr_prompt}]
+            )
+            result = (r.choices[0].message.content or "").strip()
+            logger.info(f"GPT glossary judgment result: '{result}'")
+            
+            # Check if GPT says to replace
+            should_replace = "需要替换" in result
+            return should_replace
+            
+        except Exception as e:
+            logger.error(f"GPT glossary judgment failed: {e}")
+            return False  # Default to no replacement on error
