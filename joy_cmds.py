@@ -345,6 +345,231 @@ class RemoveUserSelect(discord.ui.Select):
             logger.error(f"Failed to remove user from whitelist: {e}")
             await interaction.response.send_message("❌ 删除失败 Remove failed", ephemeral=True)
 
+class RoleManagementView(discord.ui.View):
+    def __init__(self, guild_id: str, *, timeout=600):
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+    
+    @discord.ui.button(label="1. 添加白名单角色 Add Role", style=discord.ButtonStyle.green)
+    async def add_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Show role selection modal
+        modal = AddRoleModal(self.guild_id)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="2. 查看白名单角色 List Roles", style=discord.ButtonStyle.secondary)
+    async def list_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        whitelisted_roles = admin_config.get("allowed_role_ids", [])
+        
+        if not whitelisted_roles:
+            await interaction.response.send_message("📋 暂无白名单角色 No whitelisted roles", ephemeral=True)
+        else:
+            role_list = []
+            for role_id in whitelisted_roles:
+                try:
+                    role = interaction.guild.get_role(role_id)
+                    name = role.name if role else f"Unknown Role ({role_id})"
+                    role_list.append(f"• {name} (ID: {role_id})")
+                except:
+                    role_list.append(f"• Unknown Role (ID: {role_id})")
+            
+            result = "**白名单角色 Whitelisted Roles:**\n" + "\n".join(role_list)
+            if len(result) > 1900:  # Discord message limit
+                result = result[:1900] + "...\n(消息过长已截断 Message truncated)"
+            
+            await interaction.response.send_message(result, ephemeral=True)
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    @discord.ui.button(label="3. 删除白名单角色 Remove Role", style=discord.ButtonStyle.danger)
+    async def remove_role(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        whitelisted_roles = admin_config.get("allowed_role_ids", [])
+        
+        if not whitelisted_roles:
+            await interaction.response.send_message("❌ 暂无白名单角色可删除 No whitelisted roles to remove", ephemeral=True)
+            # Track this popup message for cleanup
+            try:
+                response_message = await interaction.original_response()
+                _track_popup_message(interaction.user.id, response_message)
+            except Exception as e:
+                logger.warning(f"Failed to track popup message: {e}")
+            return
+        
+        # Create role selection dropdown
+        view = RemoveRoleView(self.guild_id, whitelisted_roles, interaction.guild)
+        await interaction.response.send_message(
+            "🗑️ 选择要删除的白名单角色 Select role to remove from whitelist:",
+            view=view,
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class AddRoleModal(discord.ui.Modal, title="添加白名单角色 Add Whitelisted Role"):
+    def __init__(self, guild_id: str):
+        super().__init__()
+        self.guild_id = guild_id
+    
+    role_mention = discord.ui.TextInput(
+        label="角色提及或ID Role mention or ID",
+        style=discord.TextStyle.short,
+        placeholder="例如: @RoleName 或 1234567890",
+        max_length=100,
+        required=True
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            role_input = self.role_mention.value.strip()
+            role_id = None
+            
+            # Try to extract role ID from mention or direct ID
+            if role_input.startswith('<@&') and role_input.endswith('>'):
+                # Extract from mention format <@&1234567890>
+                role_id = int(role_input.replace('<@&', '').replace('>', ''))
+            else:
+                # Try direct ID
+                role_id = int(role_input)
+            
+            # Verify role exists in the guild
+            role = interaction.guild.get_role(role_id)
+            if not role:
+                await interaction.response.send_message("❌ 角色不在此服务器中 Role not found in this server", ephemeral=True)
+                return
+            
+            # Add to whitelist
+            config = _load_json_or(CONFIG_PATH, {})
+            admin_config = _ensure_admin_block(config, self.guild_id)
+            current_roles = set(admin_config.get("allowed_role_ids", []))
+            
+            if role_id in current_roles:
+                await interaction.response.send_message(f"⚠️ {role.name} 已在白名单中 already in whitelist", ephemeral=True)
+                return
+            
+            current_roles.add(role_id)
+            admin_config["allowed_role_ids"] = list(current_roles)
+            _save_json(CONFIG_PATH, config)
+            
+            await interaction.response.send_message(f"✅ 已添加 {role.name} 到白名单 Added to whitelist", ephemeral=True)
+            logger.info(f"Added role {role.name} ({role_id}) to whitelist for guild {self.guild_id}")
+            
+        except ValueError:
+            await interaction.response.send_message("❌ 无效的角色ID格式 Invalid role ID format", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to add role to whitelist: {e}")
+            await interaction.response.send_message("❌ 添加失败 Add failed", ephemeral=True)
+
+class RemoveRoleView(discord.ui.View):
+    def __init__(self, guild_id: str, whitelisted_roles: List[int], guild, *, timeout=600):
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        
+        # Create dropdown with role options
+        options = []
+        count = 0
+        for role_id in whitelisted_roles:
+            count += 1
+            try:
+                role = guild.get_role(role_id)
+                name = role.name if role else f"Unknown Role"
+                label = f"{name}"
+                # Truncate label if too long
+                if len(label) > 80:
+                    label = label[:77] + "..."
+                
+                description = f"ID: {role_id}"
+                options.append(discord.SelectOption(
+                    label=label,
+                    value=str(role_id),
+                    description=description,
+                ))
+            except:
+                options.append(discord.SelectOption(
+                    label=f"Unknown Role",
+                    value=str(role_id),
+                    description=f"ID: {role_id}",
+                ))
+            
+            # Discord dropdown limit is 25 options
+            if count >= 25:
+                break
+        
+        if options:
+            select = RemoveRoleSelect(self.guild_id, options)
+            self.add_item(select)
+    
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class RemoveRoleSelect(discord.ui.Select):
+    def __init__(self, guild_id: str, options: List[discord.SelectOption]):
+        super().__init__(
+            placeholder="选择要删除的角色... Select role to remove...",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+        self.guild_id = guild_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_role_id = int(self.values[0])
+        
+        try:
+            # Get role info for confirmation
+            role = interaction.guild.get_role(selected_role_id)
+            role_name = role.name if role else f"Unknown Role ({selected_role_id})"
+            
+            # Remove from whitelist
+            config = _load_json_or(CONFIG_PATH, {})
+            admin_config = _ensure_admin_block(config, self.guild_id)
+            current_roles = set(admin_config.get("allowed_role_ids", []))
+            
+            if selected_role_id not in current_roles:
+                await interaction.response.send_message("❌ 角色不在白名单中 Role not in whitelist", ephemeral=True)
+                return
+            
+            current_roles.remove(selected_role_id)
+            admin_config["allowed_role_ids"] = list(current_roles)
+            _save_json(CONFIG_PATH, config)
+            
+            await interaction.response.send_message(f"✅ 已从白名单移除 {role_name} Removed from whitelist", ephemeral=True)
+            logger.info(f"Removed role {role_name} ({selected_role_id}) from whitelist for guild {self.guild_id}")
+            
+            # Track this popup message for cleanup
+            try:
+                response_message = await interaction.original_response()
+                _track_popup_message(interaction.user.id, response_message)
+            except Exception as e:
+                logger.warning(f"Failed to track popup message: {e}")
+            
+        except Exception as e:
+            logger.error(f"Failed to remove role from whitelist: {e}")
+            await interaction.response.send_message("❌ 删除失败 Remove failed", ephemeral=True)
+
 class PermissionMenuView(discord.ui.View):
     def __init__(self, guild_id: str, *, timeout=600):  # 10 minutes timeout
         super().__init__(timeout=timeout)
@@ -374,24 +599,14 @@ class PermissionMenuView(discord.ui.View):
     async def manage_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _cleanup_old_popups(interaction.user.id)
         
-        config = _load_json_or(CONFIG_PATH, {})
-        admin_config = _ensure_admin_block(config, self.guild_id)
-        whitelisted_roles = admin_config.get("allowed_role_ids", [])
-        
-        if not whitelisted_roles:
-            await interaction.response.send_message("📋 暂无白名单角色 No whitelisted roles", ephemeral=True)
-        else:
-            role_list = []
-            for role_id in whitelisted_roles:
-                try:
-                    role = interaction.guild.get_role(role_id)
-                    name = role.name if role else f"Unknown Role ({role_id})"
-                    role_list.append(f"• {name}")
-                except:
-                    role_list.append(f"• Unknown Role ({role_id})")
-            
-            result = "**白名单角色 Whitelisted Roles:**\n" + "\n".join(role_list)
-            await interaction.response.send_message(result, ephemeral=True)
+        # Show role management submenu
+        view = RoleManagementView(self.guild_id)
+        await interaction.response.send_message(
+            "**白名单角色管理 Whitelisted Role Management**\n\n"
+            "请选择操作 Please select an operation:",
+            view=view,
+            ephemeral=True
+        )
         
         # Track this popup message for cleanup
         try:
@@ -1243,11 +1458,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
-        # VERSION: v2.2.1 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.2.2 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "v2.2.1 请选择操作类型 Please select operation type:",
+            "v2.2.2 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
