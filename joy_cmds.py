@@ -65,13 +65,13 @@ class ErrorSelectionView(discord.ui.View):
     def __init__(self, *, timeout=36000):  # 10 hours timeout
         super().__init__(timeout=timeout)
     
-    @discord.ui.button(label="1. 报告翻译逻辑错误", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="1. 报告翻译逻辑错误 report bot logical bug", style=discord.ButtonStyle.red)
     async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Create and send the problem report modal
         modal = ProblemReportModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="2. 添加术语", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="2. 添加术语 add prompt", style=discord.ButtonStyle.green)
     async def add_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Start the glossary addition process
         session_id = str(uuid.uuid4())
@@ -95,7 +95,7 @@ class ErrorSelectionView(discord.ui.View):
             ephemeral=True
         )
     
-    @discord.ui.button(label="3. 查看术语", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="3. 查看术语 list prompts", style=discord.ButtonStyle.secondary)
     async def list_glossaries(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
@@ -127,7 +127,7 @@ class ErrorSelectionView(discord.ui.View):
         
         await interaction.response.send_message(result, ephemeral=True)
     
-    @discord.ui.button(label="4. 删除术语", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="4. 删除术语 delete prompt", style=discord.ButtonStyle.danger)
     async def delete_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
