@@ -119,7 +119,7 @@ class GlossaryHandler:
                 else:
                     # Cross-language replacement - use placeholder
                     logger.info(f"GLOSSARY DEBUG: Cross-language replacement: {entry['source_language']} -> {entry['target_language']}")
-                    placeholder = f"__GLOSSARY_{len(source_text)}_{hash(source_text)}__"
+                    placeholder = f"GLOSSARYTERM{abs(hash(source_text))}"
                     if source_language == "英文":
                         pattern_escaped = re.escape(source_text)
                         boundary_pattern = rf"(?<![A-Za-z0-9]){pattern_escaped}(?![A-Za-z0-9])"

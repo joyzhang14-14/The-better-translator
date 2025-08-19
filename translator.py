@@ -138,7 +138,7 @@ class Translator:
                                 glossary_processed_text = glossary_processed_text.replace(source_term, entry["target_text"])
                         else:
                             # Cross-language replacement - use placeholder
-                            placeholder = f"__GLOSSARY_{len(source_term)}_{hash(source_term)}__"
+                            placeholder = f"GLOSSARYTERM{abs(hash(source_term))}"
                             if source_lang == "英文":
                                 import re
                                 pattern_escaped = re.escape(source_term)
@@ -425,8 +425,8 @@ class Translator:
                         translations.append(result.text.strip())
                         logger.info(f"DEEPL_DEBUG: '{sentence}' -> '{result.text.strip()}'")
                 
-                # Combine translations
-                combined = "".join(translations)
+                # Combine translations with spaces
+                combined = " ".join(translations)
                 logger.info(f"DEEPL_DEBUG: Combined sentence translations: '{combined}'")
                 return combined
                 
