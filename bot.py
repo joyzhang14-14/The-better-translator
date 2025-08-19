@@ -1132,9 +1132,10 @@ class TranslatorBot(commands.Bot):
         
         # Get message history context if no explicit reply (second priority)
         history_messages = None
-        if reply_context is None and self._should_use_context_translation(msg.guild.id, msg.channel.id, msg.author.id):
-            history_messages = self._get_context_messages(msg.guild.id, msg.channel.id, msg.author.id)
-            logger.info(f"DEBUG: Using message history context for user {msg.author.id}: {len(history_messages)} messages")
+        # TEMPORARILY DISABLE CONTEXT TRANSLATION to fix message duplication issues
+        # if reply_context is None and self._should_use_context_translation(msg.guild.id, msg.channel.id, msg.author.id):
+        #     history_messages = self._get_context_messages(msg.guild.id, msg.channel.id, msg.author.id)
+        #     logger.info(f"DEBUG: Using message history context for user {msg.author.id}: {len(history_messages)} messages")
         
         async def to_target(text: str, direction: str) -> str:
             tr = await self.translator.translate_text(text, direction, cm, context=reply_context, history_messages=history_messages, guild_id=gid, user_name=msg.author.display_name)
@@ -1164,23 +1165,28 @@ class TranslatorBot(commands.Bot):
                 tr = await to_target(txt, "en_to_zh")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
             elif lang == "Chinese":
-                # Chinese message from English channel -> translate to English channel only
+                # Chinese message from English channel -> send original to Chinese + translation to English
+                logger.info(f"Chinese message from English channel: sending original to Chinese + translation to English")
+                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
                 tr = await to_target(txt, "zh_to_en")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "Mixed":
-                logger.info(f"Processing mixed language: '{txt}'")
-                # Use GPT5 to determine primary language and direction
+                logger.info(f"Processing mixed language from English channel: '{txt}'")
+                # For Mixed from English channel, send original to Chinese + determine translation direction
+                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
+                
+                # Use GPT5 to determine primary language for translation
                 primary_lang = await self._gpt5_determine_primary_language(txt)
                 if primary_lang == "Chinese":
                     # Treat as Chinese -> translate to English
                     tr = await to_target(txt, "zh_to_en")
                     await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
                 elif primary_lang == "English":
-                    # Treat as English -> translate to Chinese
+                    # Treat as English -> translate to Chinese (but original already sent)
                     tr = await to_target(txt, "en_to_zh")
-                    await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
+                    # Don't send duplicate to Chinese channel since original is already there
                 else:
-                    # Fallback: treat as Chinese (send to English channel)
+                    # Fallback: treat as Chinese -> translate to English
                     tr = await to_target(txt, "zh_to_en")
                     await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             else:
