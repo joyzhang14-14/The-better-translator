@@ -110,10 +110,15 @@ class ErrorSelectionView(discord.ui.View):
         count = 0
         for entry_id, entry in guild_glossaries.items():
             count += 1
-            replacement_type = "🔴 强制性 mandatory" if not entry["needs_gpt"] else "🟡 选择性 optional"
+            replacement_type = "强制性Mandatory" if not entry["needs_gpt"] else "选择性Optional"
+            
+            # Convert language names to bilingual format
+            source_lang_display = "中文Chinese" if entry['source_language'] == "中文" else "英文English"
+            target_lang_display = "中文Chinese" if entry['target_language'] == "中文" else "英文English"
+            
             line = (f"`{count}.` {replacement_type} | "
-                   f"{entry['source_language']} `{entry['source_text']}` → "
-                   f"{entry['target_language']} `{entry['target_text']}`")
+                   f"{source_lang_display} {entry['source_text']} → "
+                   f"{target_lang_display} {entry['target_text']}")
             lines.append(line)
             
             # Limit to 15 entries to avoid message length issues
@@ -209,15 +214,19 @@ class DeleteGlossarySelect(discord.ui.Select):
         
         # Get the entry details for confirmation
         entry = guild_glossaries[selected_entry_id]
-        replacement_type = "强制性 mandatory" if not entry["needs_gpt"] else "选择性 optional"
+        replacement_type = "强制性Mandatory" if not entry["needs_gpt"] else "选择性Optional"
+        
+        # Convert language names to bilingual format
+        source_lang_display = "中文Chinese" if entry['source_language'] == "中文" else "英文English"
+        target_lang_display = "中文Chinese" if entry['target_language'] == "中文" else "英文English"
         
         # Show confirmation
         view = DeleteConfirmationView(self.guild_id, selected_entry_id, entry)
         await interaction.response.send_message(
             f"🗑️ **确认删除术语 Confirm Delete Glossary**\n\n"
             f"**类型 Type**: {replacement_type}\n"
-            f"**源文字 Source**: {entry['source_language']} `{entry['source_text']}`\n"
-            f"**目标文字 Target**: {entry['target_language']} `{entry['target_text']}`\n\n"
+            f"**源文字 Source**: {source_lang_display} `{entry['source_text']}`\n"
+            f"**目标文字 Target**: {target_lang_display} `{entry['target_text']}`\n\n"
             f"❗ 此操作不可撤销 This action cannot be undone",
             view=view,
             ephemeral=True
