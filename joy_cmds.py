@@ -502,11 +502,11 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
         glossary_handler._save_local_glossaries()
 
 def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, guild_abbrs, abbr_path, can_use):
-    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!error"]
+    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14"]
     _ensure_pt_commands(mgmt_cmds)
 
-    @bot.command(name="error")
-    async def error_command(ctx):
+    @bot.command(name="bot14")
+    async def bot14_command(ctx):
         if not can_use(ctx.guild, ctx.author):
             return await ctx.reply("❌需要权限 Need permission", mention_author=False)
         
