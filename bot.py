@@ -470,7 +470,49 @@ class TranslatorBot(commands.Bot):
             en_count = len(re.findall(r"[A-Za-z]", t2))
             return "Chinese" if zh_count >= en_count else "English"
 
-
+    async def _gpt5_determine_primary_language(self, text: str) -> str:
+        """Use GPT5 to determine which language is primary for mixed language text"""
+        sys = (
+            "分析这段中英混合的文字，判断应该将其主要理解为中文还是英文。"
+            "考虑语言的主体含义、语法结构、和交流意图。"
+            "只回答 'Chinese' 或 'English'，不要其他解释。"
+        )
+        usr = f"分析文字: {text}"
+        
+        try:
+            if not self.openai_client:
+                logger.warning("No OpenAI client available, using character count fallback for Mixed language")
+                t2 = re.sub(r"[^\u4e00-\u9fffA-Za-z]", "", text)
+                zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
+                en_count = len(re.findall(r"[A-Za-z]", t2))
+                return "Chinese" if zh_count >= en_count else "English"
+                
+            r = await self.openai_client.chat.completions.create(
+                model="gpt-5-mini",
+                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
+                max_completion_tokens=5
+            )
+            result = (r.choices[0].message.content or "").strip().lower()
+            logger.info(f"GPT5 primary language determination: '{text}' -> '{result}'")
+            
+            if "chinese" in result:
+                return "Chinese"
+            elif "english" in result:
+                return "English"
+            else:
+                # Fallback to character counting
+                logger.warning(f"GPT5 returned unexpected result '{result}', using character count fallback")
+                t2 = re.sub(r"[^\u4e00-\u9fffA-Za-z]", "", text)
+                zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
+                en_count = len(re.findall(r"[A-Za-z]", t2))
+                return "Chinese" if zh_count >= en_count else "English"
+        except Exception as e:
+            logger.error(f"GPT5 primary language determination failed: {e}")
+            # Fallback to character counting
+            t2 = re.sub(r"[^\u4e00-\u9fffA-Za-z]", "", text)
+            zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
+            en_count = len(re.findall(r"[A-Za-z]", t2))
+            return "Chinese" if zh_count >= en_count else "English"
 
     async def _apply_star_patch(self, prev_text: str, patch: str) -> str:
         lang = await self.detect_language(prev_text)
@@ -1101,45 +1143,60 @@ class TranslatorBot(commands.Bot):
             return tr
         if is_en:
             if lang == "English":
+                # English message from English channel -> translate to Chinese channel only
                 tr = await to_target(txt, "en_to_zh")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
             elif lang == "Chinese":
-                # Send original Chinese to Chinese channel
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
-                # Send English translation to English channel
+                # Chinese message from English channel -> translate to English channel only
                 tr = await to_target(txt, "zh_to_en")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "Mixed":
                 logger.info(f"Processing mixed language: '{txt}'")
-                # First translate to English and send to English channel
-                en_tr = await to_target(txt, "zh_to_en")  # Mixed treated as Chinese-based for direction
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], en_tr, msg, lang="English")
-                # Then translate to Chinese and send to Chinese channel
-                zh_tr = await to_target(txt, "en_to_zh")  # Use original mixed text for better Chinese translation
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
+                # Use GPT5 to determine primary language and direction
+                primary_lang = await self._gpt5_determine_primary_language(txt)
+                if primary_lang == "Chinese":
+                    # Treat as Chinese -> translate to English
+                    tr = await to_target(txt, "zh_to_en")
+                    await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
+                elif primary_lang == "English":
+                    # Treat as English -> translate to Chinese
+                    tr = await to_target(txt, "en_to_zh")
+                    await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
+                else:
+                    # Fallback: send to both channels
+                    en_tr = await to_target(txt, "zh_to_en")
+                    await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], en_tr, msg, lang="English")
+                    zh_tr = await to_target(txt, "en_to_zh")
+                    await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
             else:
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
         else:
             if lang == "Chinese":
-                # Send original Chinese to Chinese channel
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
-                # Send English translation to English channel
+                # Chinese message from Chinese channel -> translate to English channel only
                 tr = await to_target(txt, "zh_to_en")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "English":
-                # Send original English to English channel
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
-                # Send Chinese translation to Chinese channel
+                # English message from Chinese channel -> translate to Chinese channel only
                 zh_tr = await to_target(txt, "en_to_zh")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
             elif lang == "Mixed":
                 logger.info(f"Processing mixed language from Chinese channel: '{txt}'")
-                # First translate to English and send to English channel
-                en_tr = await to_target(txt, "zh_to_en")  # Mixed treated as Chinese-based for direction
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], en_tr, msg, lang="English")
-                # Then translate to Chinese and send to Chinese channel
-                zh_tr = await to_target(txt, "en_to_zh")  # Use original mixed text for better Chinese translation
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
+                # Use GPT5 to determine primary language and direction
+                primary_lang = await self._gpt5_determine_primary_language(txt)
+                if primary_lang == "Chinese":
+                    # Treat as Chinese -> translate to English
+                    tr = await to_target(txt, "zh_to_en")
+                    await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
+                elif primary_lang == "English":
+                    # Treat as English -> translate to Chinese
+                    tr = await to_target(txt, "en_to_zh")
+                    await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
+                else:
+                    # Fallback: send to both channels
+                    en_tr = await to_target(txt, "zh_to_en")
+                    await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], en_tr, msg, lang="English")
+                    zh_tr = await to_target(txt, "en_to_zh")
+                    await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
             else:
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
 
