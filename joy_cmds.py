@@ -664,6 +664,8 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
+        # VERSION: v2.0.0 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
             "v2.0.0 请选择操作类型 Please select operation type:",
