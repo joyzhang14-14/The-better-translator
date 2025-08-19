@@ -559,13 +559,6 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
             saved_problems = _load_json_or(PROBLEM_PATH, [])
             logger.info(f"Verification: file now contains {len(saved_problems)} problems")
             
-            # Also save to cloud storage
-            try:
-                await storage.save_json("problems", problems)
-                logger.info(f"Problem report saved to cloud: {problem_entry}")
-            except Exception as cloud_error:
-                logger.error(f"Failed to save problem report to cloud: {cloud_error}")
-            
             await interaction.response.send_message("✅已成功提交 submitted", ephemeral=True)
             logger.info(f"Problem report successfully processed: {problem_entry}")
             
@@ -811,11 +804,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
-        # VERSION: v2.1.5 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.1.6 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "v2.1.5 请选择操作类型 Please select operation type:",
+            "v2.1.6 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
