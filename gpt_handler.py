@@ -172,9 +172,9 @@ class GPTHandler:
         if source_lang == "中文" and target_lang == "英文":
             # Chinese to English
             sys_prompt = (
-                f"分析对话内容和语境，判断用户最后一句话中的"{source_term}"是否应该被替换为英文"{target_term}"。"
+                f"分析对话内容和语境，判断用户最后一句话中的「{source_term}」是否应该被替换为英文「{target_term}」。"
                 f"请根据对话的逻辑、语境和用户的意图来判断。"
-                f"只回答"需要替换"或"不需要替换"，不要其他解释。"
+                f"只回答「需要替换」或「不需要替换」，不要其他解释。"
             )
         elif source_lang == "英文" and target_lang == "中文":
             # English to Chinese  
@@ -186,9 +186,9 @@ class GPTHandler:
         elif source_lang == "中文" and target_lang == "中文":
             # Chinese to Chinese
             sys_prompt = (
-                f"分析对话内容和语境，判断用户最后一句话中的"{source_term}"是否应该被替换为"{target_term}"。"
+                f"分析对话内容和语境，判断用户最后一句话中的「{source_term}」是否应该被替换为「{target_term}」。"
                 f"请根据对话的逻辑、语境和用户的意图来判断这种替换是否合适。"
-                f"只回答"需要替换"或"不需要替换"，不要其他解释。"
+                f"只回答「需要替换」或「不需要替换」，不要其他解释。"
             )
         else:
             # English to English
@@ -198,7 +198,7 @@ class GPTHandler:
                 f"Only answer '需要替换' or '不需要替换', no other explanation."
             )
         
-        usr_prompt = f"这是一份对话内容，你将会根据对话的逻辑和内容判断：\n{context_text}\n\n你觉得对话中{current_user}说的"{source_term}"需不需要被替换成（{target_lang}）"{target_term}"？"
+        usr_prompt = f"这是一份对话内容，你将会根据对话的逻辑和内容判断：\n{context_text}\n\n你觉得对话中{current_user}说的「{source_term}」需不需要被替换成（{target_lang}）「{target_term}」？"
         
         try:
             if not self.openai_client:

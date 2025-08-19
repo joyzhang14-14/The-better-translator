@@ -22,6 +22,7 @@ import health_server
 from storage import storage
 from translator import Translator
 from gpt_handler import GPTHandler
+from glossary_handler import glossary_handler
 
 # Load environment variables from .env file
 load_dotenv()
@@ -266,7 +267,6 @@ class TranslatorBot(commands.Bot):
         passthrough_cfg.update(_load_json_or(PASSTHROUGH_PATH, {"default": {"commands": [], "fillers": []}}))
         
         # Load glossaries from cloud
-        from glossary_handler import glossary_handler
         await glossary_handler.load_from_cloud()
         
         logger.info(f"Loaded {len(guild_dicts)} guilds in dictionary")
