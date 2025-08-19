@@ -664,6 +664,52 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
     async def test(ctx):
         logger.info("TEST command called")
         await ctx.reply("Bot is working! Test successful.", mention_author=False)
+    
+    @bot.command(name="debug_paths")
+    async def debug_paths(ctx):
+        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
+            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        
+        import os
+        BASE = os.path.dirname(__file__)
+        bot_problem_path = os.path.abspath(os.path.join(BASE, "problem.json"))
+        joy_cmds_problem_path = PROBLEM_PATH
+        
+        # Check if files exist
+        bot_exists = os.path.exists(bot_problem_path)
+        joy_exists = os.path.exists(joy_cmds_problem_path)
+        
+        # Get file contents if they exist
+        bot_content = "File not found"
+        joy_content = "File not found"
+        
+        if bot_exists:
+            try:
+                with open(bot_problem_path, 'r', encoding='utf-8') as f:
+                    bot_data = json.load(f)
+                    bot_content = f"{len(bot_data)} problems"
+            except:
+                bot_content = "Error reading file"
+        
+        if joy_exists:
+            try:
+                with open(joy_cmds_problem_path, 'r', encoding='utf-8') as f:
+                    joy_data = json.load(f)
+                    joy_content = f"{len(joy_data)} problems"
+            except:
+                joy_content = "Error reading file"
+        
+        debug_info = (
+            f"**Path Debug Info**\n"
+            f"Bot path: `{bot_problem_path}`\n"
+            f"Joy path: `{joy_cmds_problem_path}`\n"
+            f"Same path: {bot_problem_path == joy_cmds_problem_path}\n"
+            f"Bot file exists: {bot_exists} ({bot_content})\n"
+            f"Joy file exists: {joy_exists} ({joy_content})\n"
+            f"CWD: `{os.getcwd()}`"
+        )
+        
+        await ctx.reply(debug_info, mention_author=False)
 
     # Clean up expired sessions periodically
     @bot.event
