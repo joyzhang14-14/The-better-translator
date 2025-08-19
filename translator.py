@@ -1,10 +1,30 @@
 import asyncio
 import logging
+import os
+import json
 import deepl
 from preprocess import preprocess, preprocess_with_emoji_extraction, restore_emojis, FSURE_HEAD, FSURE_SEP, has_bao_de_pattern
 from glossary_handler import glossary_handler
 
 logger = logging.getLogger(__name__)
+
+def _load_json_or(path: str, fallback):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            txt = f.read().strip()
+            return json.loads(txt) if txt else fallback
+    except Exception:
+        return fallback
+
+def _is_glossary_enabled(guild_id: str) -> bool:
+    """Check if glossary detection is enabled for the guild (default: True)"""
+    if not guild_id:
+        return True  # Default to enabled
+    
+    CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
+    config = _load_json_or(CONFIG_PATH, {})
+    guild_config = config.get("guilds", {}).get(guild_id, {})
+    return guild_config.get("glossary_enabled", True)  # Default: enabled
 
 class Translator:
     def __init__(self, deepl_client, gpt_handler):
@@ -102,14 +122,15 @@ class Translator:
         # Apply dictionary first (legacy dictionary support)
         dict_applied_text = self._apply_dictionary(text_without_emojis, direction, custom_map)
         
-        # Glossary processing
-        if guild_id:
+        # Glossary processing (skip if disabled for this guild)
+        if guild_id and _is_glossary_enabled(guild_id):
             # Determine source language for glossary matching
             if direction == "zh_to_en":
                 source_lang = "中文"
             else:
                 source_lang = "英文"
             
+            logger.info(f"GLOSSARY_DEBUG: Processing glossary for guild {guild_id} (enabled)")
             # Apply mandatory glossary replacements first
             glossary_processed_text = glossary_handler.apply_mandatory_replacements(dict_applied_text, guild_id, source_lang)
             
@@ -156,6 +177,9 @@ class Translator:
                             glossary_handler._pending_replacements[session_key][placeholder] = entry["target_text"]
             
             processed_text = glossary_processed_text
+        elif guild_id and not _is_glossary_enabled(guild_id):
+            logger.info(f"GLOSSARY_DEBUG: Glossary processing disabled for guild {guild_id}, skipping")
+            processed_text = dict_applied_text
         else:
             processed_text = dict_applied_text
         
