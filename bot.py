@@ -269,9 +269,27 @@ class TranslatorBot(commands.Bot):
         # Load glossaries from cloud
         await glossary_handler.load_from_cloud()
         
+        # Load problem reports from cloud and sync to local file
+        await self._load_problem_reports()
+        
         logger.info(f"Loaded {len(guild_dicts)} guilds in dictionary")
         
         self._mirror_load()
+    
+    async def _load_problem_reports(self):
+        """Load problem reports from cloud and sync to local file"""
+        try:
+            PROBLEM_PATH = os.path.join(BASE, "problem.json")
+            cloud_problems = await storage.load_json("problems", [])
+            if cloud_problems:
+                # Save to local file
+                with open(PROBLEM_PATH, "w", encoding="utf-8") as f:
+                    json.dump(cloud_problems, f, ensure_ascii=False, indent=2)
+                logger.info(f"Loaded {len(cloud_problems)} problem reports from cloud")
+            else:
+                logger.info("No problem reports found in cloud storage")
+        except Exception as e:
+            logger.error(f"Failed to load problem reports from cloud: {e}")
         self.session = aiohttp.ClientSession()
         # Start health check server
         self.health_runner = await health_server.start_health_server()

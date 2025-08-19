@@ -302,6 +302,13 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
             problems.append(problem_entry)
             _save_json(PROBLEM_PATH, problems)
             
+            # Also save to cloud storage
+            try:
+                await storage.save_json("problems", problems)
+                logger.info(f"Problem report saved to cloud: {problem_entry}")
+            except Exception as cloud_error:
+                logger.error(f"Failed to save problem report to cloud: {cloud_error}")
+            
             await interaction.response.send_message("✅已成功提交 submitted", ephemeral=True)
             logger.info(f"Problem report saved: {problem_entry}")
         except Exception as e:
