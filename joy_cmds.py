@@ -950,6 +950,41 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         )
         
         await ctx.reply(debug_info, mention_author=False)
+    
+    @bot.command(name="test_problem")
+    async def test_problem(ctx):
+        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
+            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        
+        try:
+            # Test problem report saving directly
+            problems = _load_json_or(PROBLEM_PATH, [])
+            logger.info(f"TEST: Loaded {len(problems)} existing problems from {PROBLEM_PATH}")
+            
+            test_entry = {
+                "timestamp": time.time(),
+                "guild_id": str(ctx.guild.id),
+                "user_id": ctx.author.id,
+                "username": ctx.author.display_name,
+                "description": "TEST PROBLEM REPORT"
+            }
+            problems.append(test_entry)
+            logger.info(f"TEST: Created test entry: {test_entry}")
+            
+            _save_json(PROBLEM_PATH, problems)
+            logger.info(f"TEST: Saved {len(problems)} problems to {PROBLEM_PATH}")
+            
+            # Verify
+            saved_problems = _load_json_or(PROBLEM_PATH, [])
+            logger.info(f"TEST: Verification shows {len(saved_problems)} problems")
+            
+            await ctx.reply(f"✅ Test problem report saved. Total problems: {len(saved_problems)}", mention_author=False)
+            
+        except Exception as e:
+            logger.error(f"TEST: Error saving test problem: {e}")
+            import traceback
+            logger.error(f"TEST: Full traceback: {traceback.format_exc()}")
+            await ctx.reply(f"❌ Test failed: {e}", mention_author=False)
 
     # Clean up expired sessions periodically
     @bot.event
