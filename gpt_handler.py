@@ -73,12 +73,15 @@ class GPTHandler:
         zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
         en_count = len(re.findall(r"[A-Za-z]", t2))
         
-        # Step 4: Simple rule - any Chinese characters = Chinese
-        if zh_count > 0:
-            logger.info(f"Chinese characters detected ({zh_count} Chinese, {en_count} English), treating as Chinese")
+        # Step 4: Detect mixed language vs pure language
+        if zh_count > 0 and en_count > 0:
+            logger.info(f"Mixed language detected ({zh_count} Chinese, {en_count} English), treating as Mixed")
+            return "Mixed"
+        elif zh_count > 0:
+            logger.info(f"Pure Chinese detected ({zh_count} Chinese), treating as Chinese")
             return "Chinese"
         elif en_count > 0:
-            logger.info(f"Only English characters detected ({en_count} English), treating as English")
+            logger.info(f"Pure English detected ({en_count} English), treating as English")
             return "English"
         else:
             return "meaningless"
@@ -94,7 +97,9 @@ class GPTHandler:
         zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
         en_count = len(re.findall(r"[A-Za-z]", t2))
         
-        if zh_count > 0:
+        if zh_count > 0 and en_count > 0:
+            return "Mixed"
+        elif zh_count > 0:
             return "Chinese"
         elif en_count > 0:
             return "English"

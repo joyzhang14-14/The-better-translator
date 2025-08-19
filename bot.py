@@ -1102,6 +1102,14 @@ class TranslatorBot(commands.Bot):
                 # Send English translation to English channel
                 tr = await to_target(txt, "zh_to_en")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
+            elif lang == "Mixed":
+                logger.info(f"Processing mixed language: '{txt}'")
+                # First translate to English and send to English channel
+                en_tr = await to_target(txt, "zh_to_en")  # Mixed treated as Chinese-based for direction
+                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], en_tr, msg, lang="English")
+                # Then translate to Chinese and send to Chinese channel
+                zh_tr = await to_target(txt, "en_to_zh")  # Use original mixed text for better Chinese translation
+                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
             else:
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
         else:
@@ -1113,6 +1121,14 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
                 # Send Chinese translation to Chinese channel
                 zh_tr = await to_target(txt, "en_to_zh")
+                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
+            elif lang == "Mixed":
+                logger.info(f"Processing mixed language from Chinese channel: '{txt}'")
+                # First translate to English and send to English channel
+                en_tr = await to_target(txt, "zh_to_en")  # Mixed treated as Chinese-based for direction
+                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], en_tr, msg, lang="English")
+                # Then translate to Chinese and send to Chinese channel
+                zh_tr = await to_target(txt, "en_to_zh")  # Use original mixed text for better Chinese translation
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], zh_tr, msg, lang="Chinese")
             else:
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
