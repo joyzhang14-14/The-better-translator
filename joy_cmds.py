@@ -65,13 +65,13 @@ class ErrorSelectionView(discord.ui.View):
     def __init__(self, *, timeout=36000):  # 10 hours timeout
         super().__init__(timeout=timeout)
     
-    @discord.ui.button(label="1. 报告翻译逻辑错误\nreport bot logical bug", style=discord.ButtonStyle.red, emoji="🐛")
+    @discord.ui.button(label="1. 报告翻译逻辑错误", style=discord.ButtonStyle.red)
     async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Create and send the problem report modal
         modal = ProblemReportModal()
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="2. 添加术语\nadd prompt", style=discord.ButtonStyle.green, emoji="📝")
+    @discord.ui.button(label="2. 添加术语", style=discord.ButtonStyle.green)
     async def add_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Start the glossary addition process
         session_id = str(uuid.uuid4())
@@ -95,7 +95,7 @@ class ErrorSelectionView(discord.ui.View):
             ephemeral=True
         )
     
-    @discord.ui.button(label="3. 查看术语\nlist prompts", style=discord.ButtonStyle.secondary, emoji="📋")
+    @discord.ui.button(label="3. 查看术语", style=discord.ButtonStyle.secondary)
     async def list_glossaries(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
@@ -127,7 +127,7 @@ class ErrorSelectionView(discord.ui.View):
         
         await interaction.response.send_message(result, ephemeral=True)
     
-    @discord.ui.button(label="4. 删除术语\ndelete prompt", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="4. 删除术语", style=discord.ButtonStyle.danger)
     async def delete_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
@@ -172,7 +172,6 @@ class DeleteGlossaryView(discord.ui.View):
                 label=label,
                 value=entry_id,
                 description=description,
-                emoji=replacement_type
             ))
             
             # Discord dropdown limit is 25 options
@@ -231,7 +230,7 @@ class DeleteConfirmationView(discord.ui.View):
         self.entry_id = entry_id
         self.entry = entry
     
-    @discord.ui.button(label="确认删除 Confirm Delete", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="确认删除 Confirm Delete", style=discord.ButtonStyle.danger)
     async def confirm_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             # Load current glossaries
@@ -268,7 +267,7 @@ class DeleteConfirmationView(discord.ui.View):
             logger.error(f"Failed to delete glossary entry: {e}")
             await interaction.response.send_message("❌ 删除失败 Delete failed", ephemeral=True)
     
-    @discord.ui.button(label="取消 Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+    @discord.ui.button(label="取消 Cancel", style=discord.ButtonStyle.secondary)
     async def cancel_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("❌ 已取消删除 Delete cancelled", ephemeral=True)
     
