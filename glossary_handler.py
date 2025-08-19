@@ -31,13 +31,29 @@ class GlossaryHandler:
             self.glossaries = {}
     
     async def load_from_cloud(self):
-        """Load glossaries from cloud storage"""
+        """Load glossaries from cloud storage and save to local file"""
         try:
             cloud_glossaries = await storage.load_json("glossaries", {})
-            self.glossaries.update(cloud_glossaries)
-            logger.info(f"Updated glossaries from cloud: {len(self.glossaries)} guilds")
+            if cloud_glossaries:
+                # Replace local data with cloud data (cloud is authoritative)
+                self.glossaries = cloud_glossaries
+                # Save to local file to keep them in sync
+                self._save_local_glossaries()
+                logger.info(f"Loaded glossaries from cloud: {len(self.glossaries)} guilds")
+            else:
+                logger.info("No glossaries found in cloud storage, keeping local data")
         except Exception as e:
             logger.error(f"Failed to load glossaries from cloud: {e}")
+    
+    def _save_local_glossaries(self):
+        """Save current glossaries to local file"""
+        try:
+            import json
+            with open(GLOSSARIES_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.glossaries, f, ensure_ascii=False, indent=2)
+            logger.info(f"Saved glossaries to local file: {len(self.glossaries)} guilds")
+        except Exception as e:
+            logger.error(f"Failed to save glossaries to local file: {e}")
     
     def find_glossary_matches(self, text: str, guild_id: str, source_language: str) -> List[Tuple[str, Dict]]:
         """Find all glossary entries that match the given text and language"""
