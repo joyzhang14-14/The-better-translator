@@ -1121,6 +1121,9 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
         else:
             if lang == "Chinese":
+                # Send original Chinese to Chinese channel
+                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
+                # Send English translation to English channel
                 tr = await to_target(txt, "zh_to_en")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "English":
