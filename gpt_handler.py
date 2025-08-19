@@ -2,6 +2,14 @@ import logging
 import re
 from typing import List, Dict, Tuple
 
+# Install opencc-python-reimplemented if not already installed
+try:
+    from opencc import OpenCC
+    cc = OpenCC('t2s')  # Traditional to Simplified Chinese converter
+except ImportError:
+    # Fallback: basic manual mapping for common traditional characters
+    cc = None
+
 logger = logging.getLogger(__name__)
 
 CUSTOM_EMOJI_RE = re.compile(r"<a?:\w{2,}>:\d+>")
@@ -10,88 +18,88 @@ UNICODE_EMOJI_RE = re.compile(r"[\U0001F300-\U0001FAFF\U00002700-\U000027BF\U000
 class GPTHandler:
     def __init__(self, openai_client):
         self.openai_client = openai_client
+    
+    def convert_traditional_to_simplified(self, text: str) -> str:
+        """Convert traditional Chinese to simplified Chinese"""
+        if not text:
+            return text
+        
+        if cc:
+            try:
+                converted = cc.convert(text)
+                if converted != text:
+                    logger.info(f"Converted traditional to simplified: '{text}' → '{converted}'")
+                return converted
+            except Exception as e:
+                logger.warning(f"OpenCC conversion failed: {e}, using fallback")
+        
+        # Fallback: basic manual mapping for common traditional characters
+        traditional_to_simplified = {
+            '繁體': '繁体', '體': '体', '國': '国', '語': '语', '來': '来', '過': '过',
+            '時': '时', '會': '会', '個': '个', '們': '们', '學': '学', '說': '说',
+            '話': '话', '長': '长', '開': '开', '關': '关', '經': '经', '對': '对',
+            '現': '现', '發': '发', '這': '这', '樣': '样', '還': '还', '應': '应',
+            '當': '当', '從': '从', '後': '后', '處': '处', '見': '见', '間': '间',
+            '問': '问', '題': '题', '實': '实', '點': '点', '條': '条', '機': '机',
+            '電': '电', '動': '动', '業': '业', '員': '员', '無': '无', '種': '种',
+            '準': '准', '決': '决', '認': '认', '識': '识', '進': '进', '選': '选',
+            '擇': '择', '變': '变', '華': '华', '質': '质', '級': '级', '類': '类'
+        }
+        
+        result = text
+        for trad, simp in traditional_to_simplified.items():
+            if trad in result:
+                result = result.replace(trad, simp)
+        
+        if result != text:
+            logger.info(f"Fallback conversion: '{text}' → '{result}'")
+        
+        return result
 
     async def detect_language(self, text: str) -> str:
         t = (text or "").strip()
         if not t:
             return "meaningless"
         
+        # Step 1: Convert traditional Chinese to simplified Chinese
+        t = self.convert_traditional_to_simplified(t)
+        
+        # Step 2: Remove emojis and clean text
         t2 = CUSTOM_EMOJI_RE.sub("", t)
         t2 = UNICODE_EMOJI_RE.sub("", t2)
         t2 = re.sub(r"(e?m+)+", "em", t2, flags=re.IGNORECASE)
+        
+        # Step 3: Count Chinese and English characters
         zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
         en_count = len(re.findall(r"[A-Za-z]", t2))
         
-        # Calculate total meaningful characters
-        total_chars = zh_count + en_count
-        
-        if total_chars == 0:
-            return "meaningless"
-        
-        # If text is purely one language
-        if zh_count and not en_count:
+        # Step 4: Simple rule - any Chinese characters = Chinese
+        if zh_count > 0:
+            logger.info(f"Chinese characters detected ({zh_count} Chinese, {en_count} English), treating as Chinese")
             return "Chinese"
-        if en_count and not zh_count:
+        elif en_count > 0:
+            logger.info(f"Only English characters detected ({en_count} English), treating as English")
             return "English"
-        
-        # For mixed language, use 30% threshold rule
-        if zh_count and en_count:
-            zh_percentage = zh_count / total_chars
-            if zh_percentage >= 0.3:  # 30% or more Chinese characters
-                logger.info(f"Mixed language detected: {zh_percentage:.1%} Chinese, treating as Chinese")
-                return "Chinese"
-            else:
-                logger.info(f"Mixed language detected: {zh_percentage:.1%} Chinese, treating as English")
-                return "English"
-        
-        return "meaningless"
+        else:
+            return "meaningless"
 
     async def _ai_detect_language(self, text: str) -> str:
-        sys = (
-            "Analyze the text and determine the PRIMARY language. "
-            "Consider which language carries the main meaning. "
-            "Output exactly one word: Chinese, English, or meaningless."
-        )
-        usr = f"Text: {text}"
-        try:
-            if not self.openai_client:
-                t2 = CUSTOM_EMOJI_RE.sub("", text)
-                zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
-                en_count = len(re.findall(r"[A-Za-z]", t2))
-                total_chars = zh_count + en_count
-                if total_chars > 0:
-                    zh_percentage = zh_count / total_chars
-                    return "Chinese" if zh_percentage >= 0.3 else "English"
-                return "English"
-                
-            r = await self.openai_client.chat.completions.create(
-                model="gpt-5-mini",
-                messages=[{"role":"system","content":sys},{"role":"user","content":usr}],
-                max_completion_tokens=5
-            )
-            result = (r.choices[0].message.content or "").strip().lower()
-            if "chinese" in result:
-                return "Chinese"
-            if "english" in result:
-                return "English"
-            t2 = CUSTOM_EMOJI_RE.sub("", text)
-            zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
-            en_count = len(re.findall(r"[A-Za-z]", t2))
-            total_chars = zh_count + en_count
-            if total_chars > 0:
-                zh_percentage = zh_count / total_chars
-                return "Chinese" if zh_percentage >= 0.3 else "English"
+        """Legacy method - now just calls the main detect_language method"""
+        # Convert traditional to simplified first
+        text = self.convert_traditional_to_simplified(text)
+        
+        # Use the same simple logic as detect_language
+        t2 = CUSTOM_EMOJI_RE.sub("", text)
+        t2 = UNICODE_EMOJI_RE.sub("", t2)
+        zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
+        en_count = len(re.findall(r"[A-Za-z]", t2))
+        
+        if zh_count > 0:
+            return "Chinese"
+        elif en_count > 0:
             return "English"
-        except Exception as e:
-            logger.error(f"AI language detection failed: {e}")
-            t2 = CUSTOM_EMOJI_RE.sub("", text)
-            zh_count = len(re.findall(r"[\u4e00-\u9fff]", t2))
-            en_count = len(re.findall(r"[A-Za-z]", t2))
-            total_chars = zh_count + en_count
-            if total_chars > 0:
-                zh_percentage = zh_count / total_chars
-                return "Chinese" if zh_percentage >= 0.3 else "English"
-            return "English"
+        else:
+            return "meaningless"
 
     async def apply_star_patch(self, prev_text: str, patch: str) -> str:
         lang = await self.detect_language(prev_text)
