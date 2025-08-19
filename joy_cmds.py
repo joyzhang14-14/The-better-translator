@@ -14,14 +14,36 @@ logger = logging.getLogger(__name__)
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 PASSTHROUGH_PATH = os.path.join(os.path.dirname(__file__), "passthrough.json")
 GLOSSARIES_PATH = os.path.join(os.path.dirname(__file__), "glossaries.json")
-PROBLEM_PATH = os.path.join(os.path.dirname(__file__), "problem.json")
+# Use absolute path for problem.json to ensure it's in the current working directory
+PROBLEM_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "problem.json"))
 
 # Global storage for pending interactions
 pending_glossary_sessions: Dict[str, Dict[str, Any]] = {}
 
 def _save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        
+        # Create a temporary file first, then rename to ensure atomic write
+        temp_path = path + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        # Atomic rename
+        os.replace(temp_path, path)
+        logger.info(f"Successfully saved JSON to {path}")
+        
+    except Exception as e:
+        logger.error(f"Failed to save JSON to {path}: {e}")
+        # Clean up temp file if it exists
+        temp_path = path + ".tmp"
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        raise
 
 def _load_json_or(path: str, fallback):
     try:
@@ -301,7 +323,14 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
     async def on_submit(self, interaction: discord.Interaction):
         # Save problem report to problem.json
         try:
+            logger.info(f"Starting to save problem report from user {interaction.user.display_name}")
+            logger.info(f"PROBLEM_PATH: {PROBLEM_PATH}")
+            
+            # Load existing problems
             problems = _load_json_or(PROBLEM_PATH, [])
+            logger.info(f"Loaded {len(problems)} existing problems")
+            
+            # Create new problem entry
             problem_entry = {
                 "timestamp": time.time(),
                 "guild_id": str(interaction.guild.id),
@@ -310,7 +339,15 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
                 "description": self.problem_description.value
             }
             problems.append(problem_entry)
+            logger.info(f"Created problem entry: {problem_entry}")
+            
+            # Save to local file with enhanced error handling
+            logger.info(f"Attempting to save {len(problems)} problems to {PROBLEM_PATH}")
             _save_json(PROBLEM_PATH, problems)
+            
+            # Verify the save by reading back
+            saved_problems = _load_json_or(PROBLEM_PATH, [])
+            logger.info(f"Verification: file now contains {len(saved_problems)} problems")
             
             # Also save to cloud storage
             try:
@@ -320,9 +357,13 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
                 logger.error(f"Failed to save problem report to cloud: {cloud_error}")
             
             await interaction.response.send_message("✅已成功提交 submitted", ephemeral=True)
-            logger.info(f"Problem report saved: {problem_entry}")
+            logger.info(f"Problem report successfully processed: {problem_entry}")
+            
         except Exception as e:
             logger.error(f"Failed to save problem report: {e}")
+            logger.error(f"Error type: {type(e)}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             await interaction.response.send_message("❌保存失败 save failed", ephemeral=True)
 
 class MandatorySelectionView(discord.ui.View):
