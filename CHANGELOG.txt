@@ -1,0 +1,133 @@
+===============================================================================
+                    DISCORD TRANSLATOR BOT - VERSION CHANGELOG
+===============================================================================
+
+Version: 2.1.1
+Release Date: 2025-01-19
+Type: Bug Fix Release
+
+===============================================================================
+MAJOR FEATURES ADDED IN v2.1.0:
+===============================================================================
+
+1. PROMPT DETECTION TOGGLE SYSTEM
+   - Added 5th button "术语检测设置 prompt detection settings" to main menu
+   - Per-guild control for glossary/prompt detection functionality
+   - Two modes available:
+     * ENABLED (Default): More accurate translation but slower processing
+     * DISABLED: Faster translation but potentially less accurate
+   - Persistent configuration stored in config.json under guilds.{guild_id}.glossary_enabled
+   - Bilingual interface with Chinese/English support
+   - Integration with existing popup cleanup system
+
+2. ENHANCED GLOSSARY PROCESSING CONTROL
+   - Smart bypass of glossary processing when disabled for performance
+   - Real-time configuration checking in translator.py
+   - Proper logging for troubleshooting glossary operations
+   - Backward compatibility with existing guilds (default: enabled)
+
+3. USER INTERFACE IMPROVEMENTS
+   - Professional button layout with proper styling
+   - Clear status indication for current detection mode
+   - Comprehensive user guidance on speed vs accuracy trade-offs
+   - Seamless integration with existing command structure
+
+===============================================================================
+BUG FIXES IN v2.1.1:
+===============================================================================
+
+1. CONFIGURATION STATE MANAGEMENT
+   - Fixed incorrect status display issue where disabled detection showed as "already enabled"
+   - Implemented real-time config reading with _get_current_status() method
+   - Removed cached status variables that caused stale state problems
+   - Added debug logging for configuration state tracking
+
+2. POPUP MESSAGE CLEANUP
+   - Fixed missing cleanup of previous bot messages before showing new dialogs
+   - Added _cleanup_old_popups() calls to all button interactions
+   - Improved message tracking for proper cleanup sequence
+   - Enhanced user experience with cleaner interface transitions
+
+3. UI/UX REFINEMENTS
+   - Removed all emojis from bot messages for professional appearance
+   - Streamlined message formatting without visual clutter
+   - Maintained full bilingual support (Chinese/English)
+   - Improved readability of status messages and descriptions
+
+4. TECHNICAL STABILITY
+   - Fixed GlossaryToggleView constructor parameter handling
+   - Enhanced error handling for config file operations
+   - Improved logging for debugging prompt detection issues
+   - Ensured proper integration with existing translation pipeline
+
+===============================================================================
+PREVIOUS MAJOR CHANGES (Referenced):
+===============================================================================
+
+Version 2.0.0 BASELINE FEATURES:
+- Traditional Chinese to Simplified Chinese conversion using OpenCC
+- Mixed language detection and dual-channel translation
+- Glossary system with mandatory and optional replacements
+- GPT-based context-aware glossary judgment
+- Command popup cleanup system
+- Star patch editing functionality
+- Multi-channel webhook translation system
+- Context-aware translation with message history
+- Comprehensive error handling and logging
+
+RECENT INFRASTRUCTURE FIXES:
+- Fixed glossary placeholder format to prevent space-to-underscore issues
+- Enhanced sentence splitting in translation retry logic
+- Improved DeepL integration with proper space preservation
+- Centralized preprocessing with traditional Chinese conversion priority
+
+===============================================================================
+TECHNICAL SPECIFICATIONS:
+===============================================================================
+
+CONFIGURATION STRUCTURE:
+{
+  "guilds": {
+    "guild_id": {
+      "glossary_enabled": true,  // Default: enabled
+      "zh_channel_id": number,
+      "en_channel_id": number,
+      "zh_webhook_url": "string",
+      "en_webhook_url": "string",
+      "admin": { ... }
+    }
+  }
+}
+
+PERFORMANCE IMPACT:
+- ENABLED: Full glossary processing + GPT judgment (slower, more accurate)
+- DISABLED: Direct translation without glossary checks (faster, potentially less accurate)
+
+COMPATIBILITY:
+- Backward compatible with existing guild configurations
+- Graceful handling of missing glossary_enabled setting (defaults to true)
+- No breaking changes to existing translation workflows
+
+===============================================================================
+DEVELOPMENT NOTES:
+===============================================================================
+
+VERSION NUMBERING SYSTEM:
+- Major.Minor.Patch format (e.g., 2.1.1)
+- Minor version (+1) for major feature additions
+- Patch version (+1) for bug fixes and small improvements
+- Current progression: 2.0.0 → 2.1.0 → 2.1.1
+
+CODE QUALITY IMPROVEMENTS:
+- Enhanced debug logging throughout glossary system
+- Improved error handling for configuration operations
+- Better separation of concerns in UI components
+- Consistent code documentation and comments
+
+TESTING CONSIDERATIONS:
+- Verify prompt detection toggle functionality in multiple guilds
+- Test configuration persistence across bot restarts
+- Validate popup cleanup behavior with rapid button interactions
+- Confirm translation performance differences between enabled/disabled modes
+
+===============================================================================
