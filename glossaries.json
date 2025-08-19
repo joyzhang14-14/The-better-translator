@@ -1,1 +1,25 @@
-{}
+{
+  "1358279435350048961": {
+    "test-mandatory-zh-en": {
+      "needs_gpt": false,
+      "source_language": "中文",
+      "source_text": "测试",
+      "target_language": "英文",
+      "target_text": "test example"
+    },
+    "test-optional-en-zh": {
+      "needs_gpt": true,
+      "source_language": "英文", 
+      "source_text": "ik",
+      "target_language": "中文",
+      "target_text": "我知道"
+    },
+    "test-same-lang": {
+      "needs_gpt": false,
+      "source_language": "英文",
+      "source_text": "lol",
+      "target_language": "英文", 
+      "target_text": "laugh out loud"
+    }
+  }
+}

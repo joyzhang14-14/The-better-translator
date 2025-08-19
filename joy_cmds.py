@@ -95,8 +95,179 @@ class ErrorSelectionView(discord.ui.View):
             ephemeral=True
         )
     
+    @discord.ui.button(label="3. 查看术语\nlist prompts", style=discord.ButtonStyle.secondary, emoji="📋")
+    async def list_glossaries(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = str(interaction.guild.id)
+        glossaries = _load_json_or(GLOSSARIES_PATH, {})
+        guild_glossaries = glossaries.get(guild_id, {})
+        
+        if not guild_glossaries:
+            await interaction.response.send_message("📋 本群组暂无术语 No glossaries in this guild", ephemeral=True)
+            return
+        
+        # Format glossaries list
+        lines = ["📋 **术语列表 Glossary List**\n"]
+        count = 0
+        for entry_id, entry in guild_glossaries.items():
+            count += 1
+            replacement_type = "🔴 强制性" if not entry["needs_gpt"] else "🟡 选择性"
+            line = (f"`{count}.` {replacement_type} | "
+                   f"{entry['source_language']} `{entry['source_text']}` → "
+                   f"{entry['target_language']} `{entry['target_text']}`")
+            lines.append(line)
+            
+            # Limit to 15 entries to avoid message length issues
+            if count >= 15:
+                lines.append(f"\n... 还有 {len(guild_glossaries) - 15} 个术语 (and {len(guild_glossaries) - 15} more)")
+                break
+        
+        result = "\n".join(lines)
+        if len(result) > 1900:  # Discord message limit
+            result = result[:1900] + "...\n(消息过长已截断 Message truncated)"
+        
+        await interaction.response.send_message(result, ephemeral=True)
+    
+    @discord.ui.button(label="4. 删除术语\ndelete prompt", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def delete_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
+        guild_id = str(interaction.guild.id)
+        glossaries = _load_json_or(GLOSSARIES_PATH, {})
+        guild_glossaries = glossaries.get(guild_id, {})
+        
+        if not guild_glossaries:
+            await interaction.response.send_message("❌ 本群组暂无术语可删除 No glossaries to delete in this guild", ephemeral=True)
+            return
+        
+        # Create selection dropdown
+        view = DeleteGlossaryView(guild_id, guild_glossaries)
+        await interaction.response.send_message(
+            "🗑️ 选择要删除的术语 Select glossary to delete:",
+            view=view,
+            ephemeral=True
+        )
+    
     async def on_timeout(self):
         # Disable all buttons when timed out
+        for item in self.children:
+            item.disabled = True
+
+class DeleteGlossaryView(discord.ui.View):
+    def __init__(self, guild_id: str, guild_glossaries: dict, *, timeout=600):
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.guild_glossaries = guild_glossaries
+        
+        # Create dropdown with glossary options
+        options = []
+        count = 0
+        for entry_id, entry in guild_glossaries.items():
+            count += 1
+            replacement_type = "🔴" if not entry["needs_gpt"] else "🟡"
+            label = f"{replacement_type} {entry['source_text']} → {entry['target_text']}"
+            # Truncate label if too long
+            if len(label) > 90:
+                label = label[:87] + "..."
+            
+            description = f"{entry['source_language']} → {entry['target_language']}"
+            options.append(discord.SelectOption(
+                label=label,
+                value=entry_id,
+                description=description,
+                emoji=replacement_type
+            ))
+            
+            # Discord dropdown limit is 25 options
+            if count >= 25:
+                break
+        
+        if options:
+            select = DeleteGlossarySelect(self.guild_id, options)
+            self.add_item(select)
+    
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class DeleteGlossarySelect(discord.ui.Select):
+    def __init__(self, guild_id: str, options: List[discord.SelectOption]):
+        super().__init__(
+            placeholder="选择要删除的术语... Select glossary to delete...",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+        self.guild_id = guild_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_entry_id = self.values[0]
+        
+        # Load current glossaries
+        glossaries = _load_json_or(GLOSSARIES_PATH, {})
+        guild_glossaries = glossaries.get(self.guild_id, {})
+        
+        if selected_entry_id not in guild_glossaries:
+            await interaction.response.send_message("❌ 术语不存在 Glossary not found", ephemeral=True)
+            return
+        
+        # Get the entry details for confirmation
+        entry = guild_glossaries[selected_entry_id]
+        replacement_type = "强制性" if not entry["needs_gpt"] else "选择性"
+        
+        # Show confirmation
+        view = DeleteConfirmationView(self.guild_id, selected_entry_id, entry)
+        await interaction.response.send_message(
+            f"🗑️ **确认删除术语 Confirm Delete Glossary**\n\n"
+            f"**类型 Type**: {replacement_type}\n"
+            f"**源文字 Source**: {entry['source_language']} `{entry['source_text']}`\n"
+            f"**目标文字 Target**: {entry['target_language']} `{entry['target_text']}`\n\n"
+            f"❗ 此操作不可撤销 This action cannot be undone",
+            view=view,
+            ephemeral=True
+        )
+
+class DeleteConfirmationView(discord.ui.View):
+    def __init__(self, guild_id: str, entry_id: str, entry: dict, *, timeout=300):
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.entry_id = entry_id
+        self.entry = entry
+    
+    @discord.ui.button(label="确认删除 Confirm Delete", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def confirm_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            # Load current glossaries
+            glossaries = _load_json_or(GLOSSARIES_PATH, {})
+            
+            # Remove the entry
+            if self.guild_id in glossaries and self.entry_id in glossaries[self.guild_id]:
+                del glossaries[self.guild_id][self.entry_id]
+                
+                # Clean up empty guild entry
+                if not glossaries[self.guild_id]:
+                    del glossaries[self.guild_id]
+                
+                # Save to local file
+                _save_json(GLOSSARIES_PATH, glossaries)
+                
+                # Save to cloud storage
+                await storage.save_json("glossaries", glossaries)
+                
+                await interaction.response.send_message(
+                    f"✅ 术语删除成功 Glossary deleted successfully\n"
+                    f"`{self.entry['source_text']}` → `{self.entry['target_text']}`",
+                    ephemeral=True
+                )
+                logger.info(f"Glossary entry deleted: {self.entry}")
+            else:
+                await interaction.response.send_message("❌ 术语不存在 Glossary not found", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to delete glossary entry: {e}")
+            await interaction.response.send_message("❌ 删除失败 Delete failed", ephemeral=True)
+    
+    @discord.ui.button(label="取消 Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("❌ 已取消删除 Delete cancelled", ephemeral=True)
+    
+    async def on_timeout(self):
         for item in self.children:
             item.disabled = True
 
