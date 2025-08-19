@@ -146,7 +146,10 @@ class Translator:
                             # Store for post-translation replacement
                             if not hasattr(glossary_handler, '_pending_replacements'):
                                 glossary_handler._pending_replacements = {}
-                            glossary_handler._pending_replacements[placeholder] = entry["target_text"]
+                            session_key = "default"  # Use default session key for consistency
+                            if session_key not in glossary_handler._pending_replacements:
+                                glossary_handler._pending_replacements[session_key] = {}
+                            glossary_handler._pending_replacements[session_key][placeholder] = entry["target_text"]
             
             processed_text = glossary_processed_text
         else:
@@ -163,7 +166,7 @@ class Translator:
                 if gpt_result != "NOT_FOR_SURE":
                     logger.info(f"DEBUG: Returning GPT result: '{gpt_result}'")
                     # Apply cross-language glossary replacements to GPT result if needed
-                    final_result = glossary_handler.restore_cross_language_replacements(gpt_result)
+                    final_result = glossary_handler.restore_cross_language_replacements(gpt_result, "default")
                     return restore_emojis(final_result, extracted_emojis)
                 else:
                     logger.info(f"DEBUG: GPT said NOT_FOR_SURE, continuing with normal processing")
@@ -184,18 +187,18 @@ class Translator:
                     if en_tail and en_tail != "/":
                         out = out + ", " + en_tail
                 # Apply cross-language glossary replacements if needed
-                final_result = glossary_handler.restore_cross_language_replacements(out or "/")
+                final_result = glossary_handler.restore_cross_language_replacements(out or "/", "default")
                 return restore_emojis(final_result, extracted_emojis)
             
             translated_result = await self._call_translate(pre, "Chinese", "English")
             # Apply cross-language glossary replacements if needed
-            final_result = glossary_handler.restore_cross_language_replacements(translated_result)
+            final_result = glossary_handler.restore_cross_language_replacements(translated_result, "default")
             return restore_emojis(final_result, extracted_emojis)
         else:
             pre = preprocess(processed_text, "en_to_zh")
             translated_result = await self._call_translate(pre, "English", "Chinese (Simplified)")
             # Apply cross-language glossary replacements if needed
-            final_result = glossary_handler.restore_cross_language_replacements(translated_result)
+            final_result = glossary_handler.restore_cross_language_replacements(translated_result, "default")
             return restore_emojis(final_result, extracted_emojis)
 
     async def _translate_with_context(self, text: str, direction: str, custom_map: dict, context: str, guild_id: str = None) -> str:
