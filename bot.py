@@ -1118,10 +1118,12 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw, msg, lang="English")
             return
         txt = strip_banner(raw)
+        # Convert traditional Chinese to simplified Chinese before language detection
+        txt = self.gpt_handler.convert_traditional_to_simplified(txt)
         lang = await self.detect_language(txt)
         logger.info(f"LANGUAGE_DEBUG: Original message: '{msg.content}', Processed: '{txt}', Detected language: '{lang}'")
         
-        # Add message to history BEFORE processing (for context-aware translation)
+        # Add message to history AFTER processing (since context translation is disabled)
         self._add_message_to_history(msg.guild.id, msg.channel.id, msg.author.id, txt)
         
         # Get reply context for better translation accuracy (highest priority)
@@ -1172,6 +1174,7 @@ class TranslatorBot(commands.Bot):
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "Mixed":
                 logger.info(f"Processing mixed language from English channel: '{txt}'")
+                logger.info(f"TIMELINE_DEBUG: About to send to Chinese channel - current message: '{msg.content}', processed: '{txt}'")
                 # For Mixed from English channel, send original to Chinese + determine translation direction
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], txt, msg, lang="Chinese")
                 

@@ -3,14 +3,7 @@ import logging
 import asyncio
 from typing import Tuple, List
 
-# Import hanzidentifier for traditional/simplified detection
-try:
-    from hanzidentifier import is_traditional, is_simplified
-    HAS_HANZIDENTIFIER = True
-except ImportError:
-    HAS_HANZIDENTIFIER = False
-    is_traditional = None
-    is_simplified = None
+# Removed hanzidentifier import - traditional/simplified conversion now handled centrally in gpt_handler.py
 
 logger = logging.getLogger(__name__)
 
@@ -37,55 +30,8 @@ _PAT_BAO_DE_SENT = re.compile(
     re.I,
 )
 
-# Common traditional Chinese characters that differ from simplified
-_TRADITIONAL_CHARS = {
-    '繁', '體', '國', '語', '來', '過', '時', '會', '個', '們', '學', '說',
-    '話', '長', '開', '關', '經', '對', '現', '發', '這', '樣', '還', '應',
-    '當', '從', '後', '處', '見', '間', '問', '題', '實', '點', '條', '機',
-    '電', '動', '業', '員', '無', '種', '準', '決', '認', '識', '進', '選',
-    '擇', '變', '華', '質', '級', '類', '買', '車', '軟', '體', '網', '絡',
-    '係', '統', '計', '劃', '導', '師', '歷', '史', '傳', '統', '優', '勢',
-    '創', '辦', '團', '隊', '領', '導', '專', '業', '標', '準', '環', '境',
-    '設', '計', '製', '作', '開', '發', '維', '護', '運', '營', '業', '務'
-}
-
-def _has_traditional_chinese(text: str) -> bool:
-    """Check if text contains traditional Chinese characters"""
-    if not text:
-        return False
-    
-    if HAS_HANZIDENTIFIER:
-        # Use hanzidentifier library for accurate detection
-        try:
-            result = is_traditional(text)
-            if result:
-                logger.info(f"hanzidentifier detected traditional Chinese in: '{text}'")
-            return result
-        except Exception as e:
-            logger.warning(f"hanzidentifier failed: {e}, using fallback method")
-    
-    # Fallback: Check if any character in text is in our traditional characters set
-    for char in text:
-        if char in _TRADITIONAL_CHARS:
-            logger.info(f"Fallback method detected traditional Chinese character '{char}' in: '{text}'")
-            return True
-    return False
-
-async def _convert_traditional_with_deepl(text: str, deepl_client) -> str:
-    """Convert traditional Chinese to simplified using DeepL"""
-    try:
-        # Use DeepL to translate from Traditional Chinese to Simplified Chinese
-        result = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: deepl_client.translate_text(text, target_lang="ZH", source_lang="ZH")
-        )
-        converted = result.text.strip()
-        if converted != text:
-            logger.info(f"DeepL traditional to simplified: '{text}' → '{converted}'")
-        return converted
-    except Exception as e:
-        logger.warning(f"DeepL traditional conversion failed: {e}, returning original text")
-        return text
+# Traditional/simplified conversion logic removed from preprocess.py
+# All traditional Chinese conversion now handled centrally in gpt_handler.py using OpenCC
 
 def _rewrite_learned_from(s: str) -> str:
     if not s or _HAS_FOR_PURPOSE.search(s):
@@ -193,18 +139,8 @@ def has_bao_de_pattern(text: str) -> bool:
         return False
     return bool(_PAT_BAO_DE_SENT.search(text.strip()))
 
-async def preprocess_with_traditional_conversion(text: str, direction: str, deepl_client, skip_bao_de: bool = False) -> str:
-    """Preprocess text with traditional Chinese to simplified conversion using DeepL"""
-    if not text:
-        return text
-    
-    # Step 1: Convert traditional Chinese to simplified if detected
-    if _has_traditional_chinese(text):
-        logger.info(f"Traditional Chinese detected in: '{text}'")
-        text = await _convert_traditional_with_deepl(text, deepl_client)
-    
-    # Step 2: Apply normal preprocessing
-    return preprocess(text, direction, skip_bao_de)
+# preprocess_with_traditional_conversion function removed
+# Traditional/simplified conversion now handled in gpt_handler.py before any preprocessing
 
 def preprocess(text: str, direction: str, skip_bao_de: bool = False) -> str:
     s = text or ""

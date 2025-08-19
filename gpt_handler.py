@@ -2,13 +2,14 @@ import logging
 import re
 from typing import List, Dict, Tuple
 
-# Install opencc-python-reimplemented if not already installed
+# OpenCC for traditional to simplified Chinese conversion
 try:
     from opencc import OpenCC
     cc = OpenCC('t2s')  # Traditional to Simplified Chinese converter
+    HAS_OPENCC = True
 except ImportError:
-    # Fallback: basic manual mapping for common traditional characters
     cc = None
+    HAS_OPENCC = False
 
 logger = logging.getLogger(__name__)
 
@@ -20,41 +21,23 @@ class GPTHandler:
         self.openai_client = openai_client
     
     def convert_traditional_to_simplified(self, text: str) -> str:
-        """Convert traditional Chinese to simplified Chinese"""
+        """Convert traditional Chinese to simplified Chinese using OpenCC
+        All traditional input will be converted to simplified, simplified text remains unchanged"""
         if not text:
             return text
         
-        if cc:
+        if HAS_OPENCC and cc:
             try:
                 converted = cc.convert(text)
                 if converted != text:
-                    logger.info(f"Converted traditional to simplified: '{text}' → '{converted}'")
+                    logger.info(f"OpenCC traditional to simplified: '{text}' → '{converted}'")
                 return converted
             except Exception as e:
-                logger.warning(f"OpenCC conversion failed: {e}, using fallback")
-        
-        # Fallback: basic manual mapping for common traditional characters
-        traditional_to_simplified = {
-            '繁體': '繁体', '體': '体', '國': '国', '語': '语', '來': '来', '過': '过',
-            '時': '时', '會': '会', '個': '个', '們': '们', '學': '学', '說': '说',
-            '話': '话', '長': '长', '開': '开', '關': '关', '經': '经', '對': '对',
-            '現': '现', '發': '发', '這': '这', '樣': '样', '還': '还', '應': '应',
-            '當': '当', '從': '从', '後': '后', '處': '处', '見': '见', '間': '间',
-            '問': '问', '題': '题', '實': '实', '點': '点', '條': '条', '機': '机',
-            '電': '电', '動': '动', '業': '业', '員': '员', '無': '无', '種': '种',
-            '準': '准', '決': '决', '認': '认', '識': '识', '進': '进', '選': '选',
-            '擇': '择', '變': '变', '華': '华', '質': '质', '級': '级', '類': '类'
-        }
-        
-        result = text
-        for trad, simp in traditional_to_simplified.items():
-            if trad in result:
-                result = result.replace(trad, simp)
-        
-        if result != text:
-            logger.info(f"Fallback conversion: '{text}' → '{result}'")
-        
-        return result
+                logger.error(f"OpenCC conversion failed: {e}, returning original text")
+                return text
+        else:
+            logger.warning("OpenCC not available, traditional Chinese conversion skipped")
+            return text
 
     async def detect_language(self, text: str) -> str:
         t = (text or "").strip()
