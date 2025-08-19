@@ -2,9 +2,9 @@
                     DISCORD TRANSLATOR BOT - VERSION CHANGELOG
 ===============================================================================
 
-Version: 2.2.0
+Version: 2.2.1
 Release Date: 2025-01-19  
-Type: Major Feature Release
+Type: Feature Enhancement Release
 
 ===============================================================================
 MAJOR FEATURES ADDED IN v2.1.0:
@@ -31,6 +31,30 @@ MAJOR FEATURES ADDED IN v2.1.0:
    - Clear status indication for current detection mode
    - Comprehensive user guidance on speed vs accuracy trade-offs
    - Seamless integration with existing command structure
+
+===============================================================================
+FEATURE ENHANCEMENTS IN v2.2.1:
+===============================================================================
+
+1. ENHANCED WHITELIST USER MANAGEMENT
+   - Added complete user management submenu under Permission Settings
+   - Three-tier user management: Add User, List Users, Remove User
+   - Modal-based user addition with @mention or ID support
+   - Dropdown-based user removal with name and ID display
+   - Real-time whitelist validation and duplicate prevention
+   - Enhanced error handling and user feedback
+
+2. UI/UX IMPROVEMENTS
+   - Changed "术语表 Glossary" button color to purple (blurple) for better visibility
+   - Simplified permission setting button labels for cleaner interface
+   - Improved menu hierarchy with consistent naming convention
+   - Enhanced user experience with streamlined navigation
+
+3. PROFESSIONAL WHITELIST WORKFLOW
+   - Industry-standard user management interface
+   - Comprehensive user verification and validation
+   - Professional error messages and success notifications
+   - Detailed logging for administrative actions
 
 ===============================================================================
 MAJOR FEATURES ADDED IN v2.2.0:
@@ -195,7 +219,7 @@ VERSION NUMBERING SYSTEM:
 - Major.Minor.Patch format (e.g., 2.1.1)
 - Minor version (+1) for major feature additions
 - Patch version (+1) for bug fixes and small improvements
-- Current progression: 2.0.0 → 2.1.0 → 2.1.1 → 2.1.2 → 2.1.3 → 2.1.4 → 2.1.5 → 2.1.6 → 2.2.0
+- Current progression: 2.0.0 → 2.1.0 → 2.1.1 → 2.1.2 → 2.1.3 → 2.1.4 → 2.1.5 → 2.1.6 → 2.2.0 → 2.2.1
 
 CODE QUALITY IMPROVEMENTS:
 - Enhanced debug logging throughout glossary system

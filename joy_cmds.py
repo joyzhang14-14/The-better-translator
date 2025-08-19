@@ -120,13 +120,21 @@ def _ensure_pt_commands(cmds):
     except Exception:
         pass
 
-class PermissionMenuView(discord.ui.View):
-    def __init__(self, guild_id: str, *, timeout=600):  # 10 minutes timeout
+class UserManagementView(discord.ui.View):
+    def __init__(self, guild_id: str, *, timeout=600):
         super().__init__(timeout=timeout)
         self.guild_id = guild_id
     
-    @discord.ui.button(label="1. 管理白名单用户 Manage Whitelisted Users", style=discord.ButtonStyle.secondary)
-    async def manage_users(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="1. 添加白名单用户 Add User", style=discord.ButtonStyle.green)
+    async def add_user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Show user selection modal
+        modal = AddUserModal(self.guild_id)
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="2. 查看白名单用户 List Users", style=discord.ButtonStyle.secondary)
+    async def list_users(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _cleanup_old_popups(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
@@ -141,11 +149,14 @@ class PermissionMenuView(discord.ui.View):
                 try:
                     user = interaction.guild.get_member(user_id)
                     name = user.display_name if user else f"Unknown User ({user_id})"
-                    user_list.append(f"• {name}")
+                    user_list.append(f"• {name} (ID: {user_id})")
                 except:
-                    user_list.append(f"• Unknown User ({user_id})")
+                    user_list.append(f"• Unknown User (ID: {user_id})")
             
             result = "**白名单用户 Whitelisted Users:**\n" + "\n".join(user_list)
+            if len(result) > 1900:  # Discord message limit
+                result = result[:1900] + "...\n(消息过长已截断 Message truncated)"
+            
             await interaction.response.send_message(result, ephemeral=True)
         
         # Track this popup message for cleanup
@@ -155,7 +166,211 @@ class PermissionMenuView(discord.ui.View):
         except Exception as e:
             logger.warning(f"Failed to track popup message: {e}")
     
-    @discord.ui.button(label="2. 管理白名单角色 Manage Whitelisted Roles", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="3. 删除白名单用户 Remove User", style=discord.ButtonStyle.danger)
+    async def remove_user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        whitelisted_users = admin_config.get("allowed_user_ids", [])
+        
+        if not whitelisted_users:
+            await interaction.response.send_message("❌ 暂无白名单用户可删除 No whitelisted users to remove", ephemeral=True)
+            # Track this popup message for cleanup
+            try:
+                response_message = await interaction.original_response()
+                _track_popup_message(interaction.user.id, response_message)
+            except Exception as e:
+                logger.warning(f"Failed to track popup message: {e}")
+            return
+        
+        # Create user selection dropdown
+        view = RemoveUserView(self.guild_id, whitelisted_users, interaction.guild)
+        await interaction.response.send_message(
+            "🗑️ 选择要删除的白名单用户 Select user to remove from whitelist:",
+            view=view,
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class AddUserModal(discord.ui.Modal, title="添加白名单用户 Add Whitelisted User"):
+    def __init__(self, guild_id: str):
+        super().__init__()
+        self.guild_id = guild_id
+    
+    user_mention = discord.ui.TextInput(
+        label="用户提及或ID User mention or ID",
+        style=discord.TextStyle.short,
+        placeholder="例如: @username 或 1234567890",
+        max_length=100,
+        required=True
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            user_input = self.user_mention.value.strip()
+            user_id = None
+            
+            # Try to extract user ID from mention or direct ID
+            if user_input.startswith('<@') and user_input.endswith('>'):
+                # Extract from mention format <@!1234567890> or <@1234567890>
+                user_id = int(user_input.replace('<@!', '').replace('<@', '').replace('>', ''))
+            else:
+                # Try direct ID
+                user_id = int(user_input)
+            
+            # Verify user exists in the guild
+            user = interaction.guild.get_member(user_id)
+            if not user:
+                await interaction.response.send_message("❌ 用户不在此服务器中 User not found in this server", ephemeral=True)
+                return
+            
+            # Add to whitelist
+            config = _load_json_or(CONFIG_PATH, {})
+            admin_config = _ensure_admin_block(config, self.guild_id)
+            current_users = set(admin_config.get("allowed_user_ids", []))
+            
+            if user_id in current_users:
+                await interaction.response.send_message(f"⚠️ {user.display_name} 已在白名单中 already in whitelist", ephemeral=True)
+                return
+            
+            current_users.add(user_id)
+            admin_config["allowed_user_ids"] = list(current_users)
+            _save_json(CONFIG_PATH, config)
+            
+            await interaction.response.send_message(f"✅ 已添加 {user.display_name} 到白名单 Added to whitelist", ephemeral=True)
+            logger.info(f"Added user {user.display_name} ({user_id}) to whitelist for guild {self.guild_id}")
+            
+        except ValueError:
+            await interaction.response.send_message("❌ 无效的用户ID格式 Invalid user ID format", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Failed to add user to whitelist: {e}")
+            await interaction.response.send_message("❌ 添加失败 Add failed", ephemeral=True)
+
+class RemoveUserView(discord.ui.View):
+    def __init__(self, guild_id: str, whitelisted_users: List[int], guild, *, timeout=600):
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        
+        # Create dropdown with user options
+        options = []
+        count = 0
+        for user_id in whitelisted_users:
+            count += 1
+            try:
+                user = guild.get_member(user_id)
+                name = user.display_name if user else f"Unknown User"
+                label = f"{name}"
+                # Truncate label if too long
+                if len(label) > 80:
+                    label = label[:77] + "..."
+                
+                description = f"ID: {user_id}"
+                options.append(discord.SelectOption(
+                    label=label,
+                    value=str(user_id),
+                    description=description,
+                ))
+            except:
+                options.append(discord.SelectOption(
+                    label=f"Unknown User",
+                    value=str(user_id),
+                    description=f"ID: {user_id}",
+                ))
+            
+            # Discord dropdown limit is 25 options
+            if count >= 25:
+                break
+        
+        if options:
+            select = RemoveUserSelect(self.guild_id, options)
+            self.add_item(select)
+    
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class RemoveUserSelect(discord.ui.Select):
+    def __init__(self, guild_id: str, options: List[discord.SelectOption]):
+        super().__init__(
+            placeholder="选择要删除的用户... Select user to remove...",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+        self.guild_id = guild_id
+    
+    async def callback(self, interaction: discord.Interaction):
+        selected_user_id = int(self.values[0])
+        
+        try:
+            # Get user info for confirmation
+            user = interaction.guild.get_member(selected_user_id)
+            user_name = user.display_name if user else f"Unknown User ({selected_user_id})"
+            
+            # Remove from whitelist
+            config = _load_json_or(CONFIG_PATH, {})
+            admin_config = _ensure_admin_block(config, self.guild_id)
+            current_users = set(admin_config.get("allowed_user_ids", []))
+            
+            if selected_user_id not in current_users:
+                await interaction.response.send_message("❌ 用户不在白名单中 User not in whitelist", ephemeral=True)
+                return
+            
+            current_users.remove(selected_user_id)
+            admin_config["allowed_user_ids"] = list(current_users)
+            _save_json(CONFIG_PATH, config)
+            
+            await interaction.response.send_message(f"✅ 已从白名单移除 {user_name} Removed from whitelist", ephemeral=True)
+            logger.info(f"Removed user {user_name} ({selected_user_id}) from whitelist for guild {self.guild_id}")
+            
+            # Track this popup message for cleanup
+            try:
+                response_message = await interaction.original_response()
+                _track_popup_message(interaction.user.id, response_message)
+            except Exception as e:
+                logger.warning(f"Failed to track popup message: {e}")
+            
+        except Exception as e:
+            logger.error(f"Failed to remove user from whitelist: {e}")
+            await interaction.response.send_message("❌ 删除失败 Remove failed", ephemeral=True)
+
+class PermissionMenuView(discord.ui.View):
+    def __init__(self, guild_id: str, *, timeout=600):  # 10 minutes timeout
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+    
+    @discord.ui.button(label="1. 白名单用户 Whitelisted Users", style=discord.ButtonStyle.secondary)
+    async def manage_users(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Show user management submenu
+        view = UserManagementView(self.guild_id)
+        await interaction.response.send_message(
+            "**白名单用户管理 Whitelisted User Management**\n\n"
+            "请选择操作 Please select an operation:",
+            view=view,
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    @discord.ui.button(label="2. 白名单角色 Whitelisted Roles", style=discord.ButtonStyle.secondary)
     async def manage_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _cleanup_old_popups(interaction.user.id)
         
@@ -185,7 +400,7 @@ class PermissionMenuView(discord.ui.View):
         except Exception as e:
             logger.warning(f"Failed to track popup message: {e}")
     
-    @discord.ui.button(label="3. 管理权限模式 Manage Permission Mode", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="3. 权限模式 Permission Mode", style=discord.ButtonStyle.danger)
     async def manage_permission_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _cleanup_old_popups(interaction.user.id)
         
@@ -409,7 +624,7 @@ class ErrorSelectionView(discord.ui.View):
         modal = ProblemReportModal(None)  # Don't delete main message
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="2. 术语表 Glossary", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="2. 术语表 Glossary", style=discord.ButtonStyle.blurple)
     async def glossary_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
@@ -1028,11 +1243,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
-        # VERSION: v2.2.0 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.2.1 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "v2.2.0 请选择操作类型 Please select operation type:",
+            "v2.2.1 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
