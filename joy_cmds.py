@@ -276,7 +276,7 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
         super().__init__()
     
     problem_description = discord.ui.TextInput(
-        label="告诉开发者关于你遇到的问题\nProvide dev more details about the issue you encountered",
+        label="描述遇到的问题 Describe the issue",
         style=discord.TextStyle.paragraph,
         placeholder="请详细描述遇到的翻译问题...\nPlease describe the translation issue in detail...",
         max_length=1000,
@@ -374,7 +374,7 @@ class SourceTextModal(discord.ui.Modal, title="输入识别文字 Input Recognit
         self.session_id = session_id
     
     source_text = discord.ui.TextInput(
-        label="请输入需要识别的文字\nPlease enter the text that needs to be recognized",
+        label="输入识别文字 Enter source text",
         style=discord.TextStyle.short,
         placeholder="例如: ik / 示例",
         max_length=100,
@@ -436,7 +436,7 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
         self.session_id = session_id
     
     target_text = discord.ui.TextInput(
-        label="请输入需要替换的文字\nPlease enter the text that needs to be replaced",
+        label="输入替换文字 Enter target text",
         style=discord.TextStyle.short,
         placeholder="例如: I know / 我知道",
         max_length=200,
