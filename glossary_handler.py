@@ -79,21 +79,30 @@ class GlossaryHandler:
         matches = self.find_glossary_matches(text, guild_id, source_language)
         result = text
         
+        logger.info(f"GLOSSARY DEBUG: apply_mandatory_replacements - text='{text}', guild='{guild_id}', lang='{source_language}'")
+        logger.info(f"GLOSSARY DEBUG: Found {len(matches)} matches: {[(m[0], m[1]['target_text']) for m in matches]}")
+        
         for source_text, entry in matches:
             if not entry["needs_gpt"]:  # Mandatory replacement
+                logger.info(f"GLOSSARY DEBUG: Processing mandatory replacement: '{source_text}' -> '{entry['target_text']}'")
+                old_result = result
                 # Check if same language replacement
                 if entry["source_language"] == entry["target_language"]:
                     # Direct replacement
+                    logger.info(f"GLOSSARY DEBUG: Same language replacement: {entry['source_language']} -> {entry['target_language']}")
                     if source_language == "英文":
                         # Use word boundary replacement for English
                         pattern_escaped = re.escape(source_text)
                         boundary_pattern = rf"(?<![A-Za-z0-9]){pattern_escaped}(?![A-Za-z0-9])"
                         result = re.sub(boundary_pattern, entry["target_text"], result, flags=re.IGNORECASE)
+                        logger.info(f"GLOSSARY DEBUG: English boundary replacement: '{old_result}' -> '{result}'")
                     else:
                         # Simple replacement for Chinese
                         result = result.replace(source_text, entry["target_text"])
+                        logger.info(f"GLOSSARY DEBUG: Chinese simple replacement: '{old_result}' -> '{result}'")
                 else:
                     # Cross-language replacement - use placeholder
+                    logger.info(f"GLOSSARY DEBUG: Cross-language replacement: {entry['source_language']} -> {entry['target_language']}")
                     placeholder = f"__GLOSSARY_{len(source_text)}_{hash(source_text)}__"
                     if source_language == "英文":
                         pattern_escaped = re.escape(source_text)
@@ -102,24 +111,36 @@ class GlossaryHandler:
                     else:
                         result = result.replace(source_text, placeholder)
                     
+                    logger.info(f"GLOSSARY DEBUG: Using placeholder '{placeholder}' for '{entry['target_text']}'")
+                    logger.info(f"GLOSSARY DEBUG: Cross-language result: '{old_result}' -> '{result}'")
+                    
                     # Store the replacement for post-translation processing
                     if not hasattr(self, '_pending_replacements'):
                         self._pending_replacements = {}
-                    self._pending_replacements[placeholder] = entry["target_text"]
+                    session_key = "default"  # For now, use default session
+                    if session_key not in self._pending_replacements:
+                        self._pending_replacements[session_key] = {}
+                    self._pending_replacements[session_key][placeholder] = entry["target_text"]
         
         return result
     
-    def restore_cross_language_replacements(self, translated_text: str) -> str:
+    def restore_cross_language_replacements(self, translated_text: str, session_key: str = "default") -> str:
         """Restore cross-language replacements after translation"""
         if not hasattr(self, '_pending_replacements'):
             return translated_text
         
+        session_replacements = self._pending_replacements.get(session_key, {})
+        if not session_replacements:
+            return translated_text
+        
         result = translated_text
-        for placeholder, replacement in self._pending_replacements.items():
+        for placeholder, replacement in session_replacements.items():
             result = result.replace(placeholder, replacement)
         
-        # Clear pending replacements
-        self._pending_replacements = {}
+        # Clear this session's pending replacements
+        if session_key in self._pending_replacements:
+            del self._pending_replacements[session_key]
+        
         return result
     
     def get_gpt_candidates(self, text: str, guild_id: str, source_language: str) -> List[Tuple[str, Dict]]:
