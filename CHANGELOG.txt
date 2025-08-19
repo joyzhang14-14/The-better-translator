@@ -2,9 +2,9 @@
                     DISCORD TRANSLATOR BOT - VERSION CHANGELOG
 ===============================================================================
 
-Version: 2.1.6
+Version: 2.2.0
 Release Date: 2025-01-19  
-Type: Bug Fix Release
+Type: Major Feature Release
 
 ===============================================================================
 MAJOR FEATURES ADDED IN v2.1.0:
@@ -31,6 +31,34 @@ MAJOR FEATURES ADDED IN v2.1.0:
    - Clear status indication for current detection mode
    - Comprehensive user guidance on speed vs accuracy trade-offs
    - Seamless integration with existing command structure
+
+===============================================================================
+MAJOR FEATURES ADDED IN v2.2.0:
+===============================================================================
+
+1. REDESIGNED MAIN MENU INTERFACE
+   - Consolidated glossary functions into single "术语表 Glossary" button with submenu
+   - Added "权限设置 Permission Settings" button for admin control
+   - Streamlined interface from 5 buttons to 4 buttons for better organization
+   - Improved user experience with hierarchical menu structure
+
+2. COMPREHENSIVE PERMISSION MANAGEMENT SYSTEM
+   - Added permission settings accessible only to server owners and whitelisted users
+   - Three-tier permission management: view users, view roles, toggle permission mode
+   - Granular control over bot access with whitelist and role-based permissions
+   - Real-time permission mode toggling between restricted and open access
+
+3. ENHANCED GLOSSARY MANAGEMENT SUBMENU
+   - Dedicated submenu for all term-related operations
+   - Add Terms, List Terms, Delete Terms functionality in organized interface
+   - Improved workflow for term management with better categorization
+   - Professional terminology replacement (prompt → term throughout interface)
+
+4. PROFESSIONAL TERMINOLOGY UPDATES
+   - Replaced all instances of "prompt" with "term" for professional consistency
+   - Updated button labels, messages, and descriptions to use industry-standard terminology
+   - Improved bilingual support with consistent Chinese/English terminology
+   - Enhanced professional appearance across all UI elements
 
 ===============================================================================
 BUG FIXES IN v2.1.6:
@@ -167,7 +195,7 @@ VERSION NUMBERING SYSTEM:
 - Major.Minor.Patch format (e.g., 2.1.1)
 - Minor version (+1) for major feature additions
 - Patch version (+1) for bug fixes and small improvements
-- Current progression: 2.0.0 → 2.1.0 → 2.1.1 → 2.1.2 → 2.1.3 → 2.1.4 → 2.1.5 → 2.1.6
+- Current progression: 2.0.0 → 2.1.0 → 2.1.1 → 2.1.2 → 2.1.3 → 2.1.4 → 2.1.5 → 2.1.6 → 2.2.0
 
 CODE QUALITY IMPROVEMENTS:
 - Enhanced debug logging throughout glossary system

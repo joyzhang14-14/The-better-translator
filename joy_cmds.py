@@ -120,21 +120,165 @@ def _ensure_pt_commands(cmds):
     except Exception:
         pass
 
-class ErrorSelectionView(discord.ui.View):
-    def __init__(self, *, timeout=36000):  # 10 hours timeout
+class PermissionMenuView(discord.ui.View):
+    def __init__(self, guild_id: str, *, timeout=600):  # 10 minutes timeout
         super().__init__(timeout=timeout)
+        self.guild_id = guild_id
     
-    @discord.ui.button(label="1. 报告翻译逻辑错误 report bot logical bug", style=discord.ButtonStyle.red)
-    async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Clean up old popups before showing modal
+    @discord.ui.button(label="1. 管理白名单用户 Manage Whitelisted Users", style=discord.ButtonStyle.secondary)
+    async def manage_users(self, interaction: discord.Interaction, button: discord.ui.Button):
         await _cleanup_old_popups(interaction.user.id)
         
-        # Create and send the problem report modal, don't pass main message for deletion
-        modal = ProblemReportModal(None)  # Don't delete main message
-        await interaction.response.send_modal(modal)
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        whitelisted_users = admin_config.get("allowed_user_ids", [])
+        
+        if not whitelisted_users:
+            await interaction.response.send_message("📋 暂无白名单用户 No whitelisted users", ephemeral=True)
+        else:
+            user_list = []
+            for user_id in whitelisted_users:
+                try:
+                    user = interaction.guild.get_member(user_id)
+                    name = user.display_name if user else f"Unknown User ({user_id})"
+                    user_list.append(f"• {name}")
+                except:
+                    user_list.append(f"• Unknown User ({user_id})")
+            
+            result = "**白名单用户 Whitelisted Users:**\n" + "\n".join(user_list)
+            await interaction.response.send_message(result, ephemeral=True)
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
-    @discord.ui.button(label="2. 添加术语 add prompt", style=discord.ButtonStyle.green)
-    async def add_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="2. 管理白名单角色 Manage Whitelisted Roles", style=discord.ButtonStyle.secondary)
+    async def manage_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        whitelisted_roles = admin_config.get("allowed_role_ids", [])
+        
+        if not whitelisted_roles:
+            await interaction.response.send_message("📋 暂无白名单角色 No whitelisted roles", ephemeral=True)
+        else:
+            role_list = []
+            for role_id in whitelisted_roles:
+                try:
+                    role = interaction.guild.get_role(role_id)
+                    name = role.name if role else f"Unknown Role ({role_id})"
+                    role_list.append(f"• {name}")
+                except:
+                    role_list.append(f"• Unknown Role ({role_id})")
+            
+            result = "**白名单角色 Whitelisted Roles:**\n" + "\n".join(role_list)
+            await interaction.response.send_message(result, ephemeral=True)
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    @discord.ui.button(label="3. 管理权限模式 Manage Permission Mode", style=discord.ButtonStyle.danger)
+    async def manage_permission_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        require_manage_guild = admin_config.get("require_manage_guild", True)
+        
+        view = PermissionModeToggleView(self.guild_id)
+        status_text = "开启 ON" if require_manage_guild else "关闭 OFF"
+        await interaction.response.send_message(
+            f"**权限模式设置 Permission Mode Settings**\n\n"
+            f"**当前状态 Current Status**: {status_text}\n\n"
+            f"**说明 Description**:\n"
+            f"开启 ON: 需要管理服务器权限或在白名单中才能使用命令\n"
+            f"关闭 OFF: 所有用户都可以使用命令\n\n"
+            f"Enable ON: Requires server management permissions or whitelist to use commands\n"
+            f"Disable OFF: All users can use commands",
+            view=view,
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class PermissionModeToggleView(discord.ui.View):
+    def __init__(self, guild_id: str, *, timeout=300):
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+    
+    @discord.ui.button(label="开启权限限制 Enable Permission Restriction", style=discord.ButtonStyle.danger)
+    async def enable_restriction(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        admin_config["require_manage_guild"] = True
+        _save_json(CONFIG_PATH, config)
+        
+        await interaction.response.send_message(
+            "✅ **权限限制已开启 Permission Restriction Enabled**\n\n"
+            "现在只有服主、白名单用户或拥有管理服务器权限的用户才能使用bot命令\n"
+            "Now only server owner, whitelisted users, or users with server management permissions can use bot commands",
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    @discord.ui.button(label="关闭权限限制 Disable Permission Restriction", style=discord.ButtonStyle.green)
+    async def disable_restriction(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await _cleanup_old_popups(interaction.user.id)
+        
+        config = _load_json_or(CONFIG_PATH, {})
+        admin_config = _ensure_admin_block(config, self.guild_id)
+        admin_config["require_manage_guild"] = False
+        _save_json(CONFIG_PATH, config)
+        
+        await interaction.response.send_message(
+            "✅ **权限限制已关闭 Permission Restriction Disabled**\n\n"
+            "现在所有用户都可以使用bot命令\n"
+            "Now all users can use bot commands",
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class GlossaryMenuView(discord.ui.View):
+    def __init__(self, *, timeout=600):  # 10 minutes timeout
+        super().__init__(timeout=timeout)
+    
+    @discord.ui.button(label="1. 添加术语 Add Terms", style=discord.ButtonStyle.green)
+    async def add_term(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
         
@@ -150,13 +294,12 @@ class ErrorSelectionView(discord.ui.View):
             "timestamp": time.time(),
             "step": "mandatory_selection",
             "data": {}
-            # Don't store original_message to avoid deleting main selection message
         }
         
         # Show mandatory/optional selection
         view = MandatorySelectionView(session_id)
         await interaction.response.send_message(
-            "添加术语为强制替换还是选择性替换\nIs adding a prompt a mandatory or optional replacement?",
+            "添加术语为强制替换还是选择性替换\nIs adding a term a mandatory or optional replacement?",
             view=view,
             ephemeral=True
         )
@@ -168,8 +311,8 @@ class ErrorSelectionView(discord.ui.View):
         except Exception as e:
             logger.warning(f"Failed to track popup message: {e}")
     
-    @discord.ui.button(label="3. 查看术语 list prompts", style=discord.ButtonStyle.secondary)
-    async def list_glossaries(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="2. 查看术语 List Terms", style=discord.ButtonStyle.secondary)
+    async def list_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
         
@@ -178,10 +321,10 @@ class ErrorSelectionView(discord.ui.View):
         guild_glossaries = glossaries.get(guild_id, {})
         
         if not guild_glossaries:
-            await interaction.response.send_message("📋 本群组暂无术语 No glossaries in this guild", ephemeral=True)
+            await interaction.response.send_message("📋 本群组暂无术语 No terms in this guild", ephemeral=True)
         else:
             # Format glossaries list
-            lines = ["📋 **术语列表 Glossary List**\n"]
+            lines = ["📋 **术语列表 Terms List**\n"]
             count = 0
             for entry_id, entry in guild_glossaries.items():
                 count += 1
@@ -214,10 +357,9 @@ class ErrorSelectionView(discord.ui.View):
             _track_popup_message(interaction.user.id, response_message)
         except Exception as e:
             logger.warning(f"Failed to track popup message: {e}")
-            
     
-    @discord.ui.button(label="4. 删除术语 delete prompt", style=discord.ButtonStyle.danger)
-    async def delete_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="3. 删除术语 Delete Terms", style=discord.ButtonStyle.danger)
+    async def delete_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
         
@@ -226,15 +368,19 @@ class ErrorSelectionView(discord.ui.View):
         guild_glossaries = glossaries.get(guild_id, {})
         
         if not guild_glossaries:
-            await interaction.response.send_message("❌ 本群组暂无术语可删除 No glossaries to delete in this guild", ephemeral=True)
+            await interaction.response.send_message("❌ 本群组暂无术语可删除 No terms to delete in this guild", ephemeral=True)
             # Track this popup message for cleanup
-            _track_popup_message(interaction.user.id, await interaction.original_response())
+            try:
+                response_message = await interaction.original_response()
+                _track_popup_message(interaction.user.id, response_message)
+            except Exception as e:
+                logger.warning(f"Failed to track popup message: {e}")
             return
         
         # Create selection dropdown
         view = DeleteGlossaryView(guild_id, guild_glossaries)
         await interaction.response.send_message(
-            "🗑️ 选择要删除的术语 Select glossary to delete:",
+            "🗑️ 选择要删除的术语 Select term to delete:",
             view=view,
             ephemeral=True
         )
@@ -246,29 +392,107 @@ class ErrorSelectionView(discord.ui.View):
         except Exception as e:
             logger.warning(f"Failed to track popup message: {e}")
     
-    @discord.ui.button(label="5. 术语检测设置 prompt detection settings", style=discord.ButtonStyle.secondary, row=1)
-    async def toggle_glossary_detection(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+class ErrorSelectionView(discord.ui.View):
+    def __init__(self, *, timeout=36000):  # 10 hours timeout
+        super().__init__(timeout=timeout)
+    
+    @discord.ui.button(label="1. 报告翻译逻辑错误 report bot logical bug", style=discord.ButtonStyle.red)
+    async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Clean up old popups before showing modal
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Create and send the problem report modal, don't pass main message for deletion
+        modal = ProblemReportModal(None)  # Don't delete main message
+        await interaction.response.send_modal(modal)
+    
+    @discord.ui.button(label="2. 术语表 Glossary", style=discord.ButtonStyle.secondary)
+    async def glossary_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Clean up old popups before showing new one
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Show glossary management submenu
+        view = GlossaryMenuView()
+        await interaction.response.send_message(
+            "**术语表管理 Glossary Management**\n\n"
+            "请选择操作 Please select an operation:",
+            view=view,
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+    
+    @discord.ui.button(label="3. 术语检测设置 Term Detection Settings", style=discord.ButtonStyle.secondary)
+    async def toggle_term_detection(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
         
         guild_id = str(interaction.guild.id)
         config = _load_json_or(CONFIG_PATH, {})
         
-        # Get current glossary detection status (default: enabled)
+        # Get current term detection status (default: enabled)
         guild_config = config.get("guilds", {}).get(guild_id, {})
         current_status = guild_config.get("glossary_enabled", True)
         
-        logger.info(f"PROMPT_DEBUG: Guild {guild_id} glossary status: {current_status}")
+        logger.info(f"TERM_DEBUG: Guild {guild_id} term detection status: {current_status}")
         
-        # Create toggle view (no longer need to pass current_status as it reads from config)
+        # Create toggle view
         view = GlossaryToggleView(guild_id)
         status_text = "启用 Enabled" if current_status else "禁用 Disabled"
         await interaction.response.send_message(
-            f"**术语检测设置 Prompt Detection Settings**\n\n"
+            f"**术语检测设置 Term Detection Settings**\n\n"
             f"**当前状态 Current Status**: {status_text}\n"
             f"**说明 Description**:\n"
             f"启用 Enabled: 翻译可能较慢但更准确 Translation may be slower but more accurate\n"
             f"禁用 Disabled: 翻译更快但可能不够准确 Translation faster but may be less accurate",
+            view=view,
+            ephemeral=True
+        )
+        
+        # Track this popup message for cleanup
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
+            
+    
+    @discord.ui.button(label="4. 权限设置 Permission Settings", style=discord.ButtonStyle.danger)
+    async def permission_settings(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Clean up old popups before showing new one
+        await _cleanup_old_popups(interaction.user.id)
+        
+        # Check if user has permission to access permission settings
+        guild_id = str(interaction.guild.id)
+        config = _load_json_or(CONFIG_PATH, {})
+        
+        # Only server owner or existing whitelist users can access permission settings
+        is_owner = interaction.guild.owner_id == interaction.user.id
+        is_whitelisted = _is_whitelist_user(config, interaction.guild.id, interaction.user.id)
+        
+        if not (is_owner or is_whitelisted):
+            await interaction.response.send_message("❌ 只有服主或白名单用户可以访问权限设置 Only server owner or whitelisted users can access permission settings", ephemeral=True)
+            # Track this popup message for cleanup
+            try:
+                response_message = await interaction.original_response()
+                _track_popup_message(interaction.user.id, response_message)
+            except Exception as e:
+                logger.warning(f"Failed to track popup message: {e}")
+            return
+        
+        # Show permission management submenu
+        view = PermissionMenuView(guild_id)
+        await interaction.response.send_message(
+            "**权限设置 Permission Settings**\n\n"
+            "请选择操作 Please select an operation:",
             view=view,
             ephemeral=True
         )
@@ -804,11 +1028,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
-        # VERSION: v2.1.6 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.2.0 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "v2.1.6 请选择操作类型 Please select operation type:",
+            "v2.2.0 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
