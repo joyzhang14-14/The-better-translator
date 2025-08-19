@@ -16,7 +16,36 @@ class PersistentStorage:
         self.storage_type = os.environ.get('STORAGE_TYPE', 'file')  # 'file' or 'url'
         self.storage_url = os.environ.get('STORAGE_URL', '')  # For URL-based storage
         self.storage_token = os.environ.get('STORAGE_TOKEN', '')  # Authentication token
-        self.bin_id = os.environ.get('JSONBIN_ID', '689c188a43b1c97be91d1685')  # JSONBin ID
+        
+        # Try to load bin_id from local file first, then environment variable, then default
+        self.bin_id = self._load_bin_id()
+    
+    def _load_bin_id(self) -> str:
+        """Load bin_id from local file, environment variable, or default"""
+        # Try local file first
+        try:
+            if os.path.exists('.bin_id'):
+                with open('.bin_id', 'r') as f:
+                    saved_id = f.read().strip()
+                    if saved_id:
+                        logger.info(f"Loaded bin_id from local file: {saved_id}")
+                        return saved_id
+        except Exception as e:
+            logger.warning(f"Failed to load bin_id from file: {e}")
+        
+        # Fallback to environment variable or default
+        default_id = os.environ.get('JSONBIN_ID', '689c188a43b1c97be91d1685')
+        logger.info(f"Using bin_id from environment/default: {default_id}")
+        return default_id
+    
+    def _save_bin_id(self, bin_id: str) -> None:
+        """Save bin_id to local file for persistence"""
+        try:
+            with open('.bin_id', 'w') as f:
+                f.write(bin_id)
+            logger.info(f"Saved bin_id to local file: {bin_id}")
+        except Exception as e:
+            logger.error(f"Failed to save bin_id to file: {e}")
         
     async def load_json(self, key: str, fallback: Dict[str, Any] = None) -> Dict[str, Any]:
         """Load JSON data from persistent storage"""
@@ -138,9 +167,13 @@ class PersistentStorage:
                             new_bin_id = response_data.get('metadata', {}).get('id')
                             if new_bin_id:
                                 logger.info(f"Successfully created new bin with ID: {new_bin_id}")
-                                logger.info(f"Update your JSONBIN_ID environment variable to: {new_bin_id}")
+                                # Update current instance and save to local file
+                                self.bin_id = new_bin_id
+                                self._save_bin_id(new_bin_id)
+                                logger.info(f"Updated bin_id to: {new_bin_id}")
                             return True
-                        except:
+                        except Exception as e:
+                            logger.error(f"Failed to extract bin ID: {e}")
                             logger.info("Successfully created new bin but couldn't extract ID")
                             return True
                     else:
