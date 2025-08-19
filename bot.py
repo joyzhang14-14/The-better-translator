@@ -1166,19 +1166,20 @@ class TranslatorBot(commands.Bot):
                 tr = await to_target(txt, "zh_to_en")
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
             elif lang == "English":
-                # English text, translate to Chinese but send as English? Or just forward?
-                # Based on user request: translate to English (which might mean keep as English)
-                tr = await to_target(txt, "en_to_zh")  # Translate for processing but...
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")  # Send original English
+                # English text in Chinese channel: translate to Chinese and send to Chinese channel, send original to English channel
+                tr = await to_target(txt, "en_to_zh")  # Translate to Chinese
+                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")  # Send translated Chinese to Chinese channel
+                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")  # Send original English to English channel
             else:
                 # Unknown language, send to English channel
                 await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
         else:
             # From English channel - normal translation logic
             if lang == "English":
-                # English message from English channel -> translate to Chinese channel only
+                # English message from English channel -> translate to Chinese channel + send original to English channel
                 tr = await to_target(txt, "en_to_zh")
                 await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
+                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], txt, msg, lang="English")
             elif lang == "Chinese":
                 # Chinese message from English channel -> send original to Chinese + translation to English
                 logger.info(f"Chinese message from English channel: sending original to Chinese + translation to English")
