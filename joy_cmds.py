@@ -155,14 +155,18 @@ class ErrorSelectionView(discord.ui.View):
         
         # Show mandatory/optional selection
         view = MandatorySelectionView(session_id)
-        message = await interaction.response.send_message(
+        await interaction.response.send_message(
             "添加术语为强制替换还是选择性替换\nIs adding a prompt a mandatory or optional replacement?",
             view=view,
             ephemeral=True
         )
         
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
     @discord.ui.button(label="3. 查看术语 list prompts", style=discord.ButtonStyle.secondary)
     async def list_glossaries(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -174,7 +178,7 @@ class ErrorSelectionView(discord.ui.View):
         guild_glossaries = glossaries.get(guild_id, {})
         
         if not guild_glossaries:
-            message = await interaction.response.send_message("📋 本群组暂无术语 No glossaries in this guild", ephemeral=True)
+            await interaction.response.send_message("📋 本群组暂无术语 No glossaries in this guild", ephemeral=True)
         else:
             # Format glossaries list
             lines = ["📋 **术语列表 Glossary List**\n"]
@@ -205,7 +209,11 @@ class ErrorSelectionView(discord.ui.View):
             await interaction.response.send_message(result, ephemeral=True)
         
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
             
     
     @discord.ui.button(label="4. 删除术语 delete prompt", style=discord.ButtonStyle.danger)
@@ -232,7 +240,11 @@ class ErrorSelectionView(discord.ui.View):
         )
         
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
     @discord.ui.button(label="5. 术语检测设置 prompt detection settings", style=discord.ButtonStyle.secondary, row=1)
     async def toggle_glossary_detection(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -262,7 +274,11 @@ class ErrorSelectionView(discord.ui.View):
         )
         
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
     async def on_timeout(self):
         # Disable all buttons when timed out
@@ -309,7 +325,11 @@ class GlossaryToggleView(discord.ui.View):
             ephemeral=True
         )
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
     @discord.ui.button(label="禁用术语检测 Disable Prompt Detection", style=discord.ButtonStyle.red)
     async def disable_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -337,7 +357,11 @@ class GlossaryToggleView(discord.ui.View):
             ephemeral=True
         )
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
     async def on_timeout(self):
         for item in self.children:
@@ -424,7 +448,11 @@ class DeleteGlossarySelect(discord.ui.Select):
         )
         
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
 
 class DeleteConfirmationView(discord.ui.View):
     def __init__(self, guild_id: str, entry_id: str, entry: dict, *, timeout=300):
@@ -479,7 +507,11 @@ class DeleteConfirmationView(discord.ui.View):
     async def cancel_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("❌ 已取消删除 Delete cancelled", ephemeral=True)
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
     async def on_timeout(self):
         for item in self.children:
@@ -584,7 +616,11 @@ class MandatorySelectionView(discord.ui.View):
         )
         
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
     
     async def on_timeout(self):
         if self.session_id in pending_glossary_sessions:
@@ -653,7 +689,11 @@ class SourceTextModal(discord.ui.Modal, title="输入识别文字 Input Recognit
         )
         
         # Track this popup message for cleanup
-        _track_popup_message(interaction.user.id, await interaction.original_response())
+        try:
+            response_message = await interaction.original_response()
+            _track_popup_message(interaction.user.id, response_message)
+        except Exception as e:
+            logger.warning(f"Failed to track popup message: {e}")
 
 class TargetLanguageSelectionView(discord.ui.View):
     def __init__(self, session_id: str, *, timeout=600):
@@ -771,11 +811,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         await _cleanup_old_popups(ctx.author.id)
         
         # Create and send the error selection view
-        # VERSION: v2.1.4 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.1.5 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView()
         message = await ctx.reply(
-            "v2.1.4 请选择操作类型 Please select operation type:",
+            "v2.1.5 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )

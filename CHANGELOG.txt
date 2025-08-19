@@ -2,7 +2,7 @@
                     DISCORD TRANSLATOR BOT - VERSION CHANGELOG
 ===============================================================================
 
-Version: 2.1.4
+Version: 2.1.5
 Release Date: 2025-01-19  
 Type: Bug Fix Release
 
@@ -31,6 +31,16 @@ MAJOR FEATURES ADDED IN v2.1.0:
    - Clear status indication for current detection mode
    - Comprehensive user guidance on speed vs accuracy trade-offs
    - Seamless integration with existing command structure
+
+===============================================================================
+BUG FIXES IN v2.1.5:
+===============================================================================
+
+1. MESSAGE TRACKING ROBUSTNESS
+   - Added error handling for ephemeral message tracking with try-catch blocks
+   - Fixed potential crashes when tracking popup messages fails
+   - Improved stability of message cleanup system across all interaction types
+   - Enhanced logging for debugging message tracking issues
 
 ===============================================================================
 BUG FIXES IN v2.1.4:
@@ -147,7 +157,7 @@ VERSION NUMBERING SYSTEM:
 - Major.Minor.Patch format (e.g., 2.1.1)
 - Minor version (+1) for major feature additions
 - Patch version (+1) for bug fixes and small improvements
-- Current progression: 2.0.0 → 2.1.0 → 2.1.1 → 2.1.2 → 2.1.3 → 2.1.4
+- Current progression: 2.0.0 → 2.1.0 → 2.1.1 → 2.1.2 → 2.1.3 → 2.1.4 → 2.1.5
 
 CODE QUALITY IMPROVEMENTS:
 - Enhanced debug logging throughout glossary system
