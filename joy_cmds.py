@@ -26,6 +26,10 @@ user_popup_messages: Dict[int, Dict[str, discord.Message]] = {}
 
 def _save_json(path, data):
     try:
+        # DEBUG: Log the data being saved
+        logger.info(f"SAVE_DEBUG: About to save {len(data) if isinstance(data, list) else 'non-list'} items to {path}")
+        logger.info(f"SAVE_DEBUG: Data preview: {str(data)[:200]}")
+        
         # Ensure the directory exists
         os.makedirs(os.path.dirname(path), exist_ok=True)
         
@@ -34,8 +38,25 @@ def _save_json(path, data):
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
+        # DEBUG: Verify temp file content
+        if os.path.exists(temp_path):
+            temp_size = os.path.getsize(temp_path)
+            logger.info(f"SAVE_DEBUG: Temp file {temp_path} created with size {temp_size}")
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                temp_content = f.read()
+                logger.info(f"SAVE_DEBUG: Temp content preview: {temp_content[:100]}")
+        
         # Atomic rename
         os.replace(temp_path, path)
+        
+        # DEBUG: Verify final file
+        if os.path.exists(path):
+            final_size = os.path.getsize(path)
+            logger.info(f"SAVE_DEBUG: Final file {path} has size {final_size}")
+            with open(path, 'r', encoding='utf-8') as f:
+                final_content = f.read()
+                logger.info(f"SAVE_DEBUG: Final content preview: {final_content[:100]}")
+        
         logger.info(f"Successfully saved JSON to {path}")
         
     except Exception as e:
@@ -51,10 +72,32 @@ def _save_json(path, data):
 
 def _load_json_or(path: str, fallback):
     try:
+        # DEBUG: Log load operation
+        if 'problem.json' in path:
+            logger.info(f"LOAD_DEBUG: Loading from {path}")
+            if os.path.exists(path):
+                file_size = os.path.getsize(path)
+                logger.info(f"LOAD_DEBUG: File exists with size {file_size}")
+            else:
+                logger.info(f"LOAD_DEBUG: File does not exist")
+        
         with open(path, "r", encoding="utf-8") as f:
             txt = f.read().strip()
-            return json.loads(txt) if txt else fallback
-    except Exception:
+            
+            # DEBUG: Log content for problem.json
+            if 'problem.json' in path:
+                logger.info(f"LOAD_DEBUG: Raw content: {repr(txt[:100])}")
+            
+            result = json.loads(txt) if txt else fallback
+            
+            # DEBUG: Log result for problem.json
+            if 'problem.json' in path:
+                logger.info(f"LOAD_DEBUG: Parsed {len(result) if isinstance(result, list) else 'non-list'} items")
+            
+            return result
+    except Exception as e:
+        if 'problem.json' in path:
+            logger.info(f"LOAD_DEBUG: Exception loading {path}: {e}, returning fallback")
         return fallback
 
 def _ensure_admin_block(config, gid: str):
@@ -1679,7 +1722,20 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
             saved_problems = _load_json_or(PROBLEM_PATH, [])
             logger.info(f"TEST: Verification shows {len(saved_problems)} problems")
             
-            await ctx.reply(f"✅ Test problem report saved. Total problems: {len(saved_problems)}", mention_author=False)
+            # Additional debugging: Check file after save
+            import os
+            file_size = os.path.getsize(PROBLEM_PATH) if os.path.exists(PROBLEM_PATH) else 0
+            logger.info(f"TEST: File size after save: {file_size} bytes")
+            
+            # Read raw file content
+            try:
+                with open(PROBLEM_PATH, 'r', encoding='utf-8') as f:
+                    raw_content = f.read()
+                    logger.info(f"TEST: Raw file content: {repr(raw_content[:200])}")
+            except Exception as read_error:
+                logger.error(f"TEST: Error reading file: {read_error}")
+            
+            await ctx.reply(f"✅ Test problem report saved. Total problems: {len(saved_problems)}, File size: {file_size} bytes", mention_author=False)
             
         except Exception as e:
             logger.error(f"TEST: Error saving test problem: {e}")
