@@ -947,6 +947,16 @@ class TranslatorBot(commands.Bot):
         """Handle star patch by editing existing translated messages instead of sending new ones"""
         logger.info(f"DEBUG: Handling star patch edit for content: '{processed_content}'")
         
+        # Validate required configuration
+        en_channel_id = cfg.get("en_channel_id")
+        zh_channel_id = cfg.get("zh_channel_id")
+        en_webhook_url = cfg.get("en_webhook_url")
+        zh_webhook_url = cfg.get("zh_webhook_url")
+        
+        if not all([en_channel_id, zh_channel_id, en_webhook_url, zh_webhook_url]):
+            logger.error(f"Guild {gid} missing required configuration for star patch edit")
+            return
+        
         # Use the original message ID passed from the patch processing
         last_id = original_msg_id
         logger.info(f"DEBUG: Using original message ID from patch processing: {last_id}")
@@ -987,8 +997,8 @@ class TranslatorBot(commands.Bot):
                 return tr
             
             # Edit messages in target channels
-            is_en = msg.channel.id == cfg["en_channel_id"]
-            is_zh = msg.channel.id == cfg["zh_channel_id"]
+            is_en = msg.channel.id == en_channel_id
+            is_zh = msg.channel.id == zh_channel_id
             
             for ch_id, mirror_msg_id in neighbors.items():
                 try:
@@ -999,7 +1009,7 @@ class TranslatorBot(commands.Bot):
                     
                     new_content = None
                     
-                    if is_zh and ch_id == cfg["en_channel_id"]:
+                    if is_zh and ch_id == en_channel_id:
                         # From ZH channel, edit EN channel message  
                         logger.info(f"DEBUG: Editing EN channel message from ZH channel")
                         if lang == "Chinese":
@@ -1016,7 +1026,7 @@ class TranslatorBot(commands.Bot):
                         else:
                             new_content = txt
                             
-                    elif is_en and ch_id == cfg["zh_channel_id"]:
+                    elif is_en and ch_id == zh_channel_id:
                         # From EN channel, edit ZH channel message
                         logger.info(f"DEBUG: Editing ZH channel message from EN channel")
                         if lang == "English":
@@ -1040,11 +1050,13 @@ class TranslatorBot(commands.Bot):
                         if mirror_msg.webhook_id:
                             logger.info(f"DEBUG: Editing webhook message via webhook")
                             # For webhook messages, we need to use the webhook to edit
-                            if ch_id == cfg["zh_channel_id"] and "zh_webhook_url" in cfg:
-                                webhook_url = cfg["zh_webhook_url"]
-                            elif ch_id == cfg["en_channel_id"] and "en_webhook_url" in cfg:
-                                webhook_url = cfg["en_webhook_url"]
-                            else:
+                            webhook_url = None
+                            if ch_id == zh_channel_id:
+                                webhook_url = zh_webhook_url
+                            elif ch_id == en_channel_id:
+                                webhook_url = en_webhook_url
+                            
+                            if not webhook_url:
                                 logger.error(f"No webhook URL found for channel {ch_id}")
                                 continue
                                 
@@ -1081,8 +1093,19 @@ class TranslatorBot(commands.Bot):
         cfg = self._guild_cfg(gid)
         if not cfg:
             return
-        is_en = msg.channel.id == cfg["en_channel_id"]
-        is_zh = msg.channel.id == cfg["zh_channel_id"]
+        
+        # Safe access to required configuration with validation
+        en_channel_id = cfg.get("en_channel_id")
+        zh_channel_id = cfg.get("zh_channel_id")
+        en_webhook_url = cfg.get("en_webhook_url")
+        zh_webhook_url = cfg.get("zh_webhook_url")
+        
+        if not all([en_channel_id, zh_channel_id, en_webhook_url, zh_webhook_url]):
+            logger.warning(f"Guild {gid} missing required configuration: channels={en_channel_id and zh_channel_id}, webhooks={en_webhook_url and zh_webhook_url}")
+            return
+            
+        is_en = msg.channel.id == en_channel_id
+        is_zh = msg.channel.id == zh_channel_id
         if not (is_en or is_zh):
             return
         # FIRST: Apply preprocessing to original content (including traditional->simplified conversion)
@@ -1093,7 +1116,7 @@ class TranslatorBot(commands.Bot):
         if _is_command_text(gid, processed_original):
             return
         
-        # Check for star patch using preprocessed content
+        # Check for star patch using preprocessed content for detection
         patch_result = await self._process_star_patch_if_any_with_content(processed_original, msg)
         if patch_result is not None:
             patched_content, original_msg_id = patch_result
@@ -1108,11 +1131,9 @@ class TranslatorBot(commands.Bot):
         raw = processed_original
         
         if patched_content is not None:
-            # Apply preprocessing to the patched result
-            raw = preprocess(patched_content, "zh_to_en", skip_bao_de=True)
-            
-            # For star patches, edit existing messages instead of sending new ones
-            await self._handle_star_patch_edit(raw, msg, cfg, gid, cm, original_msg_id)
+            # For star patches, use the GPT-merged content directly without additional preprocessing
+            # to avoid double preprocessing and emoji loss
+            await self._handle_star_patch_edit(patched_content, msg, cfg, gid, cm, original_msg_id)
             return
         
         # Check pass-through using processed text (after potential star patch)
@@ -1128,17 +1149,17 @@ class TranslatorBot(commands.Bot):
         if await self.is_pass_through(temp_msg):
             # For pass-through messages, use original content to preserve emojis
             if is_en:
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], raw_original, msg, lang="Chinese")
+                await self.send_via_webhook(zh_webhook_url, zh_channel_id, raw_original, msg, lang="Chinese")
             else:
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw_original, msg, lang="English")
+                await self.send_via_webhook(en_webhook_url, en_channel_id, raw_original, msg, lang="English")
             return
         txt = strip_banner(raw)
         # Raw content already preprocessed above, no need to preprocess again
         lang = await self.detect_language(txt)
         logger.info(f"LANGUAGE_DEBUG: Original: '{msg.content}', Preprocessed: '{txt}', Language: '{lang}'")
         
-        # Add message to history AFTER processing (since context translation is disabled)
-        self._add_message_to_history(msg.guild.id, msg.channel.id, msg.author.id, txt)
+        # Add original message to history to avoid double preprocessing if context translation is re-enabled
+        self._add_message_to_history(msg.guild.id, msg.channel.id, msg.author.id, raw_original)
         
         # Get reply context for better translation accuracy (highest priority)
         reply_context = None
@@ -1154,67 +1175,80 @@ class TranslatorBot(commands.Bot):
         #     logger.info(f"DEBUG: Using message history context for user {msg.author.id}: {len(history_messages)} messages")
         
         async def to_target(text: str, direction: str) -> str:
-            tr = await self.translator.translate_text(text, direction, cm, context=reply_context, history_messages=history_messages, guild_id=gid, user_name=msg.author.display_name)
-            if tr == "/":
-                return text
-            return tr
-        # SIMPLIFIED LOGIC: All messages from Chinese channel translate to English only
-        # No matter what language they are, they all go to English channel
-        if not is_en:  # From Chinese channel
-            logger.info(f"Message from Chinese channel (lang={lang}): translating to English only")
-            if lang == "Chinese" or lang == "Mixed":
-                # Translate Chinese/Mixed to English
-                tr = await to_target(raw_original, "zh_to_en")
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
-            elif lang == "English":
-                # English text in Chinese channel: translate to Chinese and send to Chinese channel, send original to English channel
-                tr = await to_target(raw_original, "en_to_zh")  # Translate to Chinese (use original to preserve emojis)
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")  # Send translated Chinese to Chinese channel
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw_original, msg, lang="English")  # Send original English to English channel
-            else:
-                # Unknown language, send to English channel
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw_original, msg, lang="English")
-        else:
-            # From English channel - normal translation logic
-            if lang == "English":
-                # English message from English channel -> translate to Chinese channel + send original to English channel
-                tr = await to_target(raw_original, "en_to_zh")
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], tr, msg, lang="Chinese")
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], raw_original, msg, lang="English")
-            elif lang == "Chinese":
-                # Chinese message from English channel -> send original to Chinese + translation to English
-                logger.info(f"Chinese message from English channel: sending original to Chinese + translation to English")
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], raw_original, msg, lang="Chinese")
-                tr = await to_target(raw_original, "zh_to_en")
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
-            elif lang == "Mixed":
-                logger.info(f"Processing mixed language from English channel: '{raw_original}'")
-                logger.info(f"TIMELINE_DEBUG: About to send to Chinese channel - current message: '{msg.content}', processed: '{txt}'")
-                # For Mixed from English channel, send original to Chinese + determine translation direction
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], raw_original, msg, lang="Chinese")
-                
-                # For Mixed language from English channel, always translate to English
-                # GPT5 determines which translation approach to use
-                primary_lang = await self._gpt5_determine_primary_language(txt)
-                logger.info(f"GPT5_DEBUG: Determined primary language for '{txt}' as '{primary_lang}'")
-                
-                if primary_lang == "Chinese":
-                    # Treat as Chinese -> translate to English
+            try:
+                tr = await self.translator.translate_text(text, direction, cm, context=reply_context, history_messages=history_messages, guild_id=gid, user_name=msg.author.display_name)
+                if tr == "/":
+                    return text
+                return tr
+            except Exception as e:
+                logger.error(f"Translation failed for guild {gid}, direction {direction}: {e}")
+                return text  # Return original text on translation failure
+        
+        try:
+            # SIMPLIFIED LOGIC: All messages from Chinese channel translate to English only
+            # No matter what language they are, they all go to English channel
+            if not is_en:  # From Chinese channel
+                logger.info(f"Message from Chinese channel (lang={lang}): translating to English only")
+                if lang == "Chinese" or lang == "Mixed":
+                    # Translate Chinese/Mixed to English
                     tr = await to_target(raw_original, "zh_to_en")
-                elif primary_lang == "English":
-                    # Treat as English -> translate to clean English (remove Chinese parts)
-                    tr = await to_target(raw_original, "en_to_zh")  # First pass through translation
-                    # Then translate back to get clean English
-                    tr = await to_target(tr, "zh_to_en") if tr != "/" else raw_original
+                    await self.send_via_webhook(en_webhook_url, en_channel_id, tr, msg, lang="English")
+                elif lang == "English":
+                    # English text in Chinese channel: translate to Chinese and send to Chinese channel, send original to English channel
+                    tr = await to_target(raw_original, "en_to_zh")  # Translate to Chinese (use original to preserve emojis)
+                    await self.send_via_webhook(zh_webhook_url, zh_channel_id, tr, msg, lang="Chinese")  # Send translated Chinese to Chinese channel
+                    await self.send_via_webhook(en_webhook_url, en_channel_id, raw_original, msg, lang="English")  # Send original English to English channel
                 else:
-                    # Fallback: treat as Chinese -> translate to English
-                    tr = await to_target(raw_original, "zh_to_en")
-                
-                # Always send English result to English channel
-                await self.send_via_webhook(cfg["en_webhook_url"], cfg["en_channel_id"], tr, msg, lang="English")
-                logger.info(f"Mixed->English translation sent to English channel: '{tr}'")
+                    # Unknown language, send to English channel
+                    await self.send_via_webhook(en_webhook_url, en_channel_id, raw_original, msg, lang="English")
             else:
-                await self.send_via_webhook(cfg["zh_webhook_url"], cfg["zh_channel_id"], raw_original, msg, lang="Chinese")
+                # From English channel - normal translation logic
+                if lang == "English":
+                    # English message from English channel -> translate to Chinese channel + send original to English channel
+                    tr = await to_target(raw_original, "en_to_zh")
+                    await self.send_via_webhook(zh_webhook_url, zh_channel_id, tr, msg, lang="Chinese")
+                    await self.send_via_webhook(en_webhook_url, en_channel_id, raw_original, msg, lang="English")
+                elif lang == "Chinese":
+                    # Chinese message from English channel -> send original to Chinese + translation to English
+                    logger.info(f"Chinese message from English channel: sending original to Chinese + translation to English")
+                    await self.send_via_webhook(zh_webhook_url, zh_channel_id, raw_original, msg, lang="Chinese")
+                    tr = await to_target(raw_original, "zh_to_en")
+                    await self.send_via_webhook(en_webhook_url, en_channel_id, tr, msg, lang="English")
+                elif lang == "Mixed":
+                    logger.info(f"Processing mixed language from English channel: '{raw_original}'")
+                    logger.info(f"TIMELINE_DEBUG: About to send to Chinese channel - current message: '{msg.content}', processed: '{txt}'")
+                    # For Mixed from English channel, send original to Chinese + determine translation direction
+                    await self.send_via_webhook(zh_webhook_url, zh_channel_id, raw_original, msg, lang="Chinese")
+                    
+                    # For Mixed language from English channel, always translate to English
+                    # GPT5 determines which translation approach to use
+                    primary_lang = await self._gpt5_determine_primary_language(txt)
+                    logger.info(f"GPT5_DEBUG: Determined primary language for '{txt}' as '{primary_lang}'")
+                    
+                    if primary_lang == "Chinese":
+                        # Treat as Chinese -> translate to English
+                        tr = await to_target(raw_original, "zh_to_en")
+                    elif primary_lang == "English":
+                        # Treat as English -> translate to clean English (remove Chinese parts)
+                        tr = await to_target(raw_original, "en_to_zh")  # First pass through translation
+                        # Then translate back to get clean English
+                        tr = await to_target(tr, "zh_to_en") if tr != "/" else raw_original
+                    else:
+                        # Fallback: treat as Chinese -> translate to English
+                        tr = await to_target(raw_original, "zh_to_en")
+                    
+                    # Always send English result to English channel
+                    await self.send_via_webhook(en_webhook_url, en_channel_id, tr, msg, lang="English")
+                    logger.info(f"Mixed->English translation sent to English channel: '{tr}'")
+                else:
+                    await self.send_via_webhook(zh_webhook_url, zh_channel_id, raw_original, msg, lang="Chinese")
+        except Exception as e:
+            logger.error(f"Message processing failed for guild {gid}, message: '{msg.content}': {e}")
+            # Optionally send error notification or fallback message
+            try:
+                await self.send_via_webhook(en_webhook_url, en_channel_id, f"⚠️ Translation error: {raw_original}", msg, lang="English")
+            except:
+                pass  # Silent fail on error notification
 
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
         if after.author.bot or after.webhook_id or not after.guild:
@@ -1240,7 +1274,9 @@ class TranslatorBot(commands.Bot):
         if not cfg:
             return
         # Process the edited message as a new message to create updated translations
-        if after.channel.id in [cfg["en_channel_id"], cfg["zh_channel_id"]]:
+        en_channel_id = cfg.get("en_channel_id")
+        zh_channel_id = cfg.get("zh_channel_id")
+        if en_channel_id and zh_channel_id and after.channel.id in [en_channel_id, zh_channel_id]:
             await self.on_message(after)
 
     async def on_message_delete(self, msg: discord.Message):
