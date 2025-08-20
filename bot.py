@@ -280,6 +280,14 @@ class TranslatorBot(commands.Bot):
         self.health_runner = await health_server.start_health_server()
         # Start heartbeat task
         self.heartbeat_task.start()
+        
+        # Sync slash commands to Discord
+        try:
+            logger.info("Syncing slash commands...")
+            synced = await self.tree.sync()
+            logger.info(f"Synced {len(synced)} slash commands")
+        except Exception as e:
+            logger.error(f"Failed to sync slash commands: {e}")
 
     async def close(self):
         if self.session and not self.session.closed:

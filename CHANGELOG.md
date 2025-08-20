@@ -13,6 +13,7 @@
 - **Response Method**: Now uses `interaction.response.send_message(..., ephemeral=True)`
 - **Message Tracking**: Updated tracking to work with interaction responses
 - **Passthrough Commands**: Removed `/bot14` from text command passthrough list
+- **Slash Command Sync**: Added automatic slash command synchronization in `setup_hook()`
 
 ### ⚠️ Breaking Change
 - **Command Usage**: Users now need to use `/bot14` (slash command) instead of `!bot14` (text command)
