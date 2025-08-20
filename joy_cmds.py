@@ -1594,7 +1594,7 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
         glossary_handler._save_local_glossaries()
 
 def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, guild_abbrs, abbr_path, can_use):
-    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14", "!sync_problems"]
+    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14", "!sync_problems", "!download_problems", "!debug_cloud"]
     _ensure_pt_commands(mgmt_cmds)
 
     @bot.command(name="bot14")
@@ -1762,21 +1762,106 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
             return await ctx.reply("❌需要权限 Need permission", mention_author=False)
         
         try:
+            await ctx.reply("🔄 开始同步问题报告...\nStarting sync of problem reports...", mention_author=False)
+            
             # Load problems from cloud storage
             logger.info(f"SYNC: Loading problems from cloud storage...")
+            logger.info(f"SYNC: Storage type: {storage.storage_type}")
+            logger.info(f"SYNC: Storage URL: {storage.storage_url}")
+            logger.info(f"SYNC: Bin ID: {storage.bin_id}")
+            
             cloud_problems = await storage.load_json("problems", [])
             logger.info(f"SYNC: Found {len(cloud_problems)} problems in cloud storage")
             
-            # Save to local file
+            if not cloud_problems:
+                await ctx.send("⚠️ 云存储中没有找到问题报告\nNo problem reports found in cloud storage")
+                return
+            
+            # Save to local file (in container)
             local_path = os.path.abspath(PROBLEM_PATH)
+            logger.info(f"SYNC: Saving to local path: {local_path}")
+            
             _save_json(local_path, cloud_problems)
             logger.info(f"SYNC: Saved {len(cloud_problems)} problems to local file: {local_path}")
             
-            await ctx.reply(f"✅ 已同步 {len(cloud_problems)} 个问题报告到本地文件\nSynced {len(cloud_problems)} problem reports to local file", mention_author=False)
+            # Verify the save
+            saved_problems = _load_json_or(local_path, [])
+            logger.info(f"SYNC: Verification - local file now contains {len(saved_problems)} problems")
+            
+            await ctx.send(f"✅ 已同步 {len(cloud_problems)} 个问题报告到容器本地文件\nSynced {len(cloud_problems)} problem reports to container local file\n\n📍 文件位置 File location: `{local_path}`")
             
         except Exception as e:
             logger.error(f"SYNC: Error syncing problems: {e}")
+            import traceback
+            logger.error(f"SYNC: Full traceback: {traceback.format_exc()}")
             await ctx.reply(f"❌ 同步失败: {e}\nSync failed: {e}", mention_author=False)
+    
+    @bot.command(name="download_problems") 
+    async def download_problems(ctx):
+        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
+            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        
+        try:
+            # Load problems from cloud storage
+            logger.info(f"DOWNLOAD: Loading problems from cloud storage...")
+            cloud_problems = await storage.load_json("problems", [])
+            logger.info(f"DOWNLOAD: Found {len(cloud_problems)} problems in cloud storage")
+            
+            if not cloud_problems:
+                await ctx.reply("⚠️ 云存储中没有找到问题报告\nNo problem reports found in cloud storage", mention_author=False)
+                return
+                
+            # Format problems as JSON
+            import json
+            problems_json = json.dumps(cloud_problems, ensure_ascii=False, indent=2)
+            
+            # Create a file and send it
+            import io
+            file_buffer = io.BytesIO(problems_json.encode('utf-8'))
+            
+            import discord
+            file = discord.File(file_buffer, filename='problems.json')
+            
+            await ctx.reply(f"📥 下载问题报告文件 ({len(cloud_problems)} 个问题)\nDownloading problem reports file ({len(cloud_problems)} problems)", 
+                          file=file, mention_author=False)
+            
+        except Exception as e:
+            logger.error(f"DOWNLOAD: Error downloading problems: {e}")
+            import traceback
+            logger.error(f"DOWNLOAD: Full traceback: {traceback.format_exc()}")
+            await ctx.reply(f"❌ 下载失败: {e}\nDownload failed: {e}", mention_author=False)
+    
+    @bot.command(name="debug_cloud")
+    async def debug_cloud(ctx):
+        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
+            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        
+        try:
+            # Test cloud storage connection
+            logger.info(f"DEBUG_CLOUD: Testing cloud storage connection...")
+            
+            # Try to load problems from cloud
+            try:
+                problems = await storage.load_json("problems", [])
+                await ctx.reply(f"✅ 云存储连接正常，找到 {len(problems)} 个问题报告\nCloud storage OK, found {len(problems)} problem reports", mention_author=False)
+                
+                # Show first few problems if any
+                if problems:
+                    preview = []
+                    for i, p in enumerate(problems[:3]):
+                        preview.append(f"{i+1}. {p.get('username', 'Unknown')}: {p.get('description', 'No description')[:50]}...")
+                    preview_text = "\n".join(preview)
+                    if len(problems) > 3:
+                        preview_text += f"\n... 还有 {len(problems) - 3} 个 (and {len(problems) - 3} more)"
+                    
+                    await ctx.send(f"**问题报告预览 Problem Reports Preview:**\n```\n{preview_text}\n```")
+                
+            except Exception as cloud_error:
+                await ctx.reply(f"❌ 云存储连接失败: {cloud_error}\nCloud storage failed: {cloud_error}", mention_author=False)
+                
+        except Exception as e:
+            logger.error(f"DEBUG_CLOUD: Error: {e}")
+            await ctx.reply(f"❌ 调试失败: {e}\nDebug failed: {e}", mention_author=False)
     
     @bot.command(name="test_problem")
     async def test_problem(ctx):
