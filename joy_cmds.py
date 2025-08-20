@@ -1282,9 +1282,22 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
             except Exception as perm_error:
                 logger.error(f"File permission error: {perm_error}")
             
-            # Load existing problems
-            problems = _load_json_or(PROBLEM_PATH, [])
-            logger.info(f"Loaded {len(problems)} existing problems")
+            # Load existing problems from cloud storage first, then fallback to local
+            try:
+                logger.info(f"Attempting to load problems from cloud storage...")
+                problems = await storage.load_json("problems", [])
+                logger.info(f"Loaded {len(problems)} existing problems from cloud storage")
+                
+                # If we got data from cloud, also update local file
+                if problems:
+                    abs_path = os.path.abspath(PROBLEM_PATH)
+                    _save_json(abs_path, problems)
+                    logger.info(f"Synced {len(problems)} problems to local file")
+                    
+            except Exception as cloud_error:
+                logger.warning(f"Failed to load from cloud storage: {cloud_error}, trying local file")
+                problems = _load_json_or(PROBLEM_PATH, [])
+                logger.info(f"Loaded {len(problems)} existing problems from local file")
             
             # Create new problem entry
             problem_entry = {
@@ -1305,6 +1318,15 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
             logger.info(f"Using absolute path: {abs_path}")
             
             _save_json(abs_path, problems)
+            
+            # ALSO save to cloud storage for persistence across deployments
+            try:
+                logger.info(f"Attempting to save problems to cloud storage...")
+                await storage.save_json("problems", problems)
+                logger.info(f"Successfully saved problems to cloud storage")
+            except Exception as cloud_error:
+                logger.warning(f"Failed to save to cloud storage: {cloud_error}")
+                # Don't fail the entire operation if cloud save fails
             
             # Verify the save by reading back
             saved_problems = _load_json_or(abs_path, [])
@@ -1572,7 +1594,7 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
         glossary_handler._save_local_glossaries()
 
 def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, guild_abbrs, abbr_path, can_use):
-    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14"]
+    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14", "!sync_problems"]
     _ensure_pt_commands(mgmt_cmds)
 
     @bot.command(name="bot14")
@@ -1733,6 +1755,28 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         )
         
         await ctx.reply(debug_info, mention_author=False)
+    
+    @bot.command(name="sync_problems")
+    async def sync_problems(ctx):
+        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
+            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        
+        try:
+            # Load problems from cloud storage
+            logger.info(f"SYNC: Loading problems from cloud storage...")
+            cloud_problems = await storage.load_json("problems", [])
+            logger.info(f"SYNC: Found {len(cloud_problems)} problems in cloud storage")
+            
+            # Save to local file
+            local_path = os.path.abspath(PROBLEM_PATH)
+            _save_json(local_path, cloud_problems)
+            logger.info(f"SYNC: Saved {len(cloud_problems)} problems to local file: {local_path}")
+            
+            await ctx.reply(f"✅ 已同步 {len(cloud_problems)} 个问题报告到本地文件\nSynced {len(cloud_problems)} problem reports to local file", mention_author=False)
+            
+        except Exception as e:
+            logger.error(f"SYNC: Error syncing problems: {e}")
+            await ctx.reply(f"❌ 同步失败: {e}\nSync failed: {e}", mention_author=False)
     
     @bot.command(name="test_problem")
     async def test_problem(ctx):
