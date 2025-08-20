@@ -146,6 +146,26 @@ async def _cleanup_old_popups(user_id: int):
             if "main_message" in user_messages:
                 del user_messages["main_message"]
 
+async def _cleanup_popup_only(user_id: int):
+    """Clean up only popup messages, preserve main menu"""
+    if user_id not in user_popup_messages:
+        return
+    
+    user_messages = user_popup_messages[user_id]
+    
+    # Delete the last popup message if it exists, but keep main_message
+    if "last_popup" in user_messages:
+        try:
+            last_popup = user_messages["last_popup"]
+            await last_popup.delete()
+            logger.info(f"Deleted popup message for user {user_id}: {last_popup.content[:50] if last_popup.content else 'No content'}...")
+            del user_messages["last_popup"]
+        except Exception as e:
+            logger.warning(f"Failed to delete popup message: {e}")
+            # Remove the reference even if deletion failed
+            if "last_popup" in user_messages:
+                del user_messages["last_popup"]
+
 def _track_popup_message(user_id: int, message: discord.Message):
     """Track a popup message for later cleanup"""
     if user_id not in user_popup_messages:
@@ -183,7 +203,7 @@ class UserManagementView(discord.ui.View):
     
     @discord.ui.button(label="1. 添加白名单用户 Add User", style=discord.ButtonStyle.green)
     async def add_user(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Show user selection modal
         modal = AddUserModal(self.guild_id)
@@ -191,7 +211,7 @@ class UserManagementView(discord.ui.View):
     
     @discord.ui.button(label="2. 查看白名单用户 List Users", style=discord.ButtonStyle.secondary)
     async def list_users(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         admin_config = _ensure_admin_block(config, self.guild_id)
@@ -224,7 +244,7 @@ class UserManagementView(discord.ui.View):
     
     @discord.ui.button(label="3. 删除白名单用户 Remove User", style=discord.ButtonStyle.danger)
     async def remove_user(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         admin_config = _ensure_admin_block(config, self.guild_id)
@@ -408,7 +428,7 @@ class RoleManagementView(discord.ui.View):
     
     @discord.ui.button(label="1. 添加白名单角色 Add Role", style=discord.ButtonStyle.green)
     async def add_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Show role selection modal
         modal = AddRoleModal(self.guild_id)
@@ -416,7 +436,7 @@ class RoleManagementView(discord.ui.View):
     
     @discord.ui.button(label="2. 查看白名单角色 List Roles", style=discord.ButtonStyle.secondary)
     async def list_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         admin_config = _ensure_admin_block(config, self.guild_id)
@@ -449,7 +469,7 @@ class RoleManagementView(discord.ui.View):
     
     @discord.ui.button(label="3. 删除白名单角色 Remove Role", style=discord.ButtonStyle.danger)
     async def remove_role(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         admin_config = _ensure_admin_block(config, self.guild_id)
@@ -633,7 +653,7 @@ class PermissionMenuView(discord.ui.View):
     
     @discord.ui.button(label="1. 白名单用户 Whitelisted Users", style=discord.ButtonStyle.secondary)
     async def manage_users(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Show user management submenu
         view = UserManagementView(self.guild_id)
@@ -653,7 +673,7 @@ class PermissionMenuView(discord.ui.View):
     
     @discord.ui.button(label="2. 白名单角色 Whitelisted Roles", style=discord.ButtonStyle.secondary)
     async def manage_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Show role management submenu
         view = RoleManagementView(self.guild_id)
@@ -673,7 +693,7 @@ class PermissionMenuView(discord.ui.View):
     
     @discord.ui.button(label="3. 权限模式 Permission Mode", style=discord.ButtonStyle.danger)
     async def manage_permission_mode(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         admin_config = _ensure_admin_block(config, self.guild_id)
@@ -711,7 +731,7 @@ class PermissionModeToggleView(discord.ui.View):
     
     @discord.ui.button(label="开启权限限制 Enable Permission Restriction", style=discord.ButtonStyle.danger)
     async def enable_restriction(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         admin_config = _ensure_admin_block(config, self.guild_id)
@@ -734,7 +754,7 @@ class PermissionModeToggleView(discord.ui.View):
     
     @discord.ui.button(label="关闭权限限制 Disable Permission Restriction", style=discord.ButtonStyle.green)
     async def disable_restriction(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         admin_config = _ensure_admin_block(config, self.guild_id)
@@ -766,7 +786,7 @@ class GlossaryMenuView(discord.ui.View):
     @discord.ui.button(label="1. 添加术语 Add Terms", style=discord.ButtonStyle.green)
     async def add_term(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Start the glossary addition process
         session_id = str(uuid.uuid4())
@@ -800,7 +820,7 @@ class GlossaryMenuView(discord.ui.View):
     @discord.ui.button(label="2. 查看术语 List Terms", style=discord.ButtonStyle.secondary)
     async def list_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
@@ -847,7 +867,7 @@ class GlossaryMenuView(discord.ui.View):
     @discord.ui.button(label="3. 删除术语 Delete Terms", style=discord.ButtonStyle.danger)
     async def delete_terms(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popups before showing new one
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         guild_id = str(interaction.guild.id)
         glossaries = _load_json_or(GLOSSARIES_PATH, {})
@@ -883,11 +903,12 @@ class GlossaryMenuView(discord.ui.View):
             item.disabled = True
 
 class ErrorSelectionView(discord.ui.View):
-    def __init__(self, guild_id: str, user_id: int, is_owner: bool, *, timeout=36000):  # 10 hours timeout
+    def __init__(self, guild_id: str, user_id: int, is_owner: bool, *, timeout=600):  # 10 minutes timeout
         super().__init__(timeout=timeout)
         self.guild_id = guild_id
         self.user_id = user_id
         self.is_owner = is_owner
+        self.message = None  # Will be set after the message is sent
         
         # Check if user is whitelisted
         config = _load_json_or(CONFIG_PATH, {})
@@ -934,7 +955,7 @@ class ErrorSelectionView(discord.ui.View):
     
     async def report_bug(self, interaction: discord.Interaction):
         # Clean up old popups before showing modal
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Create and send the problem report modal, don't pass main message for deletion
         modal = ProblemReportModal(None)  # Don't delete main message
@@ -942,7 +963,7 @@ class ErrorSelectionView(discord.ui.View):
     
     async def glossary_menu(self, interaction: discord.Interaction):
         # Clean up old popups before showing new one
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Show glossary management submenu
         view = GlossaryMenuView()
@@ -962,7 +983,7 @@ class ErrorSelectionView(discord.ui.View):
     
     async def toggle_term_detection(self, interaction: discord.Interaction):
         # Clean up old popups before showing new one
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         config = _load_json_or(CONFIG_PATH, {})
         
@@ -994,7 +1015,7 @@ class ErrorSelectionView(discord.ui.View):
     
     async def permission_settings(self, interaction: discord.Interaction):
         # Clean up old popups before showing new one
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Show permission management submenu
         view = PermissionMenuView(self.guild_id)
@@ -1016,6 +1037,18 @@ class ErrorSelectionView(discord.ui.View):
         # Disable all buttons when timed out
         for item in self.children:
             item.disabled = True
+        
+        # Try to delete the main menu message after timeout
+        try:
+            if self.message:
+                await self.message.delete()
+                logger.info(f"Main menu message auto-deleted after 10 minutes timeout for user {self.user_id}")
+                
+                # Remove from tracking
+                if self.user_id in user_popup_messages and "main_message" in user_popup_messages[self.user_id]:
+                    del user_popup_messages[self.user_id]["main_message"]
+        except Exception as e:
+            logger.warning(f"Failed to auto-delete main menu message: {e}")
 
 class GlossaryToggleView(discord.ui.View):
     def __init__(self, guild_id: str, *, timeout=300):
@@ -1034,7 +1067,7 @@ class GlossaryToggleView(discord.ui.View):
     @discord.ui.button(label="启用术语检测 Enable Prompt Detection", style=discord.ButtonStyle.green)
     async def enable_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popup first
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Get real-time status
         current_status = self._get_current_status()
@@ -1066,7 +1099,7 @@ class GlossaryToggleView(discord.ui.View):
     @discord.ui.button(label="禁用术语检测 Disable Prompt Detection", style=discord.ButtonStyle.red)
     async def disable_glossary(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Clean up old popup first
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         # Get real-time status
         current_status = self._get_current_status()
@@ -1385,7 +1418,7 @@ class MandatorySelectionView(discord.ui.View):
     
     async def _handle_selection(self, interaction: discord.Interaction, needs_gpt: bool):
         # Clean up old popups before showing new one
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         if self.session_id not in pending_glossary_sessions:
             await interaction.response.send_message("❌会话已过期 Session expired", ephemeral=True)
@@ -1430,7 +1463,7 @@ class SourceLanguageSelectionView(discord.ui.View):
     
     async def _handle_selection(self, interaction: discord.Interaction, language: str):
         # Clean up old popups before showing modal
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         if self.session_id not in pending_glossary_sessions:
             await interaction.response.send_message("❌会话已过期 Session expired", ephemeral=True)
@@ -1502,7 +1535,7 @@ class TargetLanguageSelectionView(discord.ui.View):
     
     async def _handle_selection(self, interaction: discord.Interaction, language: str):
         # Clean up old popups before showing modal
-        await _cleanup_old_popups(interaction.user.id)
+        await _cleanup_popup_only(interaction.user.id)
         
         if self.session_id not in pending_glossary_sessions:
             await interaction.response.send_message("❌会话已过期 Session expired", ephemeral=True)
@@ -1617,6 +1650,9 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
             view=view,
             mention_author=False
         )
+        
+        # Set the message reference for auto-deletion
+        view.message = message
         
         # Track this main selection message (it will be preserved during cleanup)
         _track_popup_message(ctx.author.id, message)
