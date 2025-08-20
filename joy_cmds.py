@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 PASSTHROUGH_PATH = os.path.join(os.path.dirname(__file__), "passthrough.json")
 GLOSSARIES_PATH = os.path.join(os.path.dirname(__file__), "glossaries.json")
-# Use absolute path for problem.json to ensure it's in the current working directory
-PROBLEM_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "problem.json"))
+# Use absolute path for problems.json to ensure it's in the current working directory
+PROBLEM_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "problems.json"))
 
 # Global storage for pending interactions
 pending_glossary_sessions: Dict[str, Dict[str, Any]] = {}
@@ -73,7 +73,7 @@ def _save_json(path, data):
 def _load_json_or(path: str, fallback):
     try:
         # DEBUG: Log load operation
-        if 'problem.json' in path:
+        if 'problems.json' in path:
             logger.info(f"LOAD_DEBUG: Loading from {path}")
             if os.path.exists(path):
                 file_size = os.path.getsize(path)
@@ -85,18 +85,18 @@ def _load_json_or(path: str, fallback):
             txt = f.read().strip()
             
             # DEBUG: Log content for problem.json
-            if 'problem.json' in path:
+            if 'problems.json' in path:
                 logger.info(f"LOAD_DEBUG: Raw content: {repr(txt[:100])}")
             
             result = json.loads(txt) if txt else fallback
             
             # DEBUG: Log result for problem.json
-            if 'problem.json' in path:
+            if 'problems.json' in path:
                 logger.info(f"LOAD_DEBUG: Parsed {len(result) if isinstance(result, list) else 'non-list'} items")
             
             return result
     except Exception as e:
-        if 'problem.json' in path:
+        if 'problems.json' in path:
             logger.info(f"LOAD_DEBUG: Exception loading {path}: {e}, returning fallback")
         return fallback
 
@@ -1263,7 +1263,7 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        # Save problem report to problem.json with enhanced debugging
+        # Save problem report to problems.json with enhanced debugging
         try:
             logger.info(f"=== PROBLEM REPORT DEBUG START ===")
             logger.info(f"Starting to save problem report from user {interaction.user.display_name}")
@@ -1717,7 +1717,7 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         
         import os
         BASE = os.path.dirname(__file__)
-        bot_problem_path = os.path.abspath(os.path.join(BASE, "problem.json"))
+        bot_problem_path = os.path.abspath(os.path.join(BASE, "problems.json"))
         joy_cmds_problem_path = PROBLEM_PATH
         
         # Check if files exist

@@ -26,7 +26,8 @@
       "Bash(done)",
       "Bash(del abbreviations.json)",
       "Bash(grep:*)",
-      "Bash(del test_preprocess_order.py)"
+      "Bash(del test_preprocess_order.py)",
+      "Bash(del test_problem_save.py debug_problem_fix.py)"
     ],
     "deny": [],
     "ask": [],
