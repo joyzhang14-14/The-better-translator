@@ -1594,7 +1594,7 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
         glossary_handler._save_local_glossaries()
 
 def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, guild_abbrs, abbr_path, can_use):
-    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14", "!sync_problems", "!download_problems", "!debug_cloud"]
+    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14", "!sync_problems", "!download_problems", "!clear_problems", "!debug_cloud"]
     _ensure_pt_commands(mgmt_cmds)
 
     @bot.command(name="bot14")
@@ -1758,8 +1758,9 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
     
     @bot.command(name="sync_problems")
     async def sync_problems(ctx):
-        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
-            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        # Only allow the specific user (joyzhang14) to use this command
+        if ctx.author.id != 1073555366803165245:
+            return await ctx.reply("❌此命令仅限特定用户使用 This command is restricted", mention_author=False)
         
         try:
             await ctx.reply("🔄 开始同步问题报告...\nStarting sync of problem reports...", mention_author=False)
@@ -1798,8 +1799,9 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
     
     @bot.command(name="download_problems") 
     async def download_problems(ctx):
-        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
-            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        # Only allow the specific user (joyzhang14) to use this command
+        if ctx.author.id != 1073555366803165245:
+            return await ctx.reply("❌此命令仅限特定用户使用 This command is restricted", mention_author=False)
         
         try:
             # Load problems from cloud storage
@@ -1831,10 +1833,89 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
             logger.error(f"DOWNLOAD: Full traceback: {traceback.format_exc()}")
             await ctx.reply(f"❌ 下载失败: {e}\nDownload failed: {e}", mention_author=False)
     
+    @bot.command(name="clear_problems")
+    async def clear_problems(ctx):
+        # Only allow the specific user (joyzhang14) to use this command
+        if ctx.author.id != 1073555366803165245:
+            return await ctx.reply("❌此命令仅限特定用户使用 This command is restricted", mention_author=False)
+        
+        try:
+            # Load current problems to show count
+            logger.info(f"CLEAR: Loading problems from cloud storage...")
+            cloud_problems = await storage.load_json("problems", [])
+            logger.info(f"CLEAR: Found {len(cloud_problems)} problems in cloud storage")
+            
+            if not cloud_problems:
+                await ctx.reply("⚠️ 云存储中没有找到问题报告，无需删除\nNo problem reports found in cloud storage, nothing to clear", mention_author=False)
+                return
+            
+            # Ask for confirmation with button
+            import discord
+            
+            class ConfirmClearView(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=30)
+                    self.confirmed = False
+                
+                @discord.ui.button(label="确认删除 Confirm Delete", style=discord.ButtonStyle.danger, emoji="🗑️")
+                async def confirm_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    if interaction.user.id != 1073555366803165245:
+                        return await interaction.response.send_message("❌只有管理员可以操作 Only admin can operate", ephemeral=True)
+                    
+                    try:
+                        # Clear problems by saving empty list
+                        await storage.save_json("problems", [])
+                        logger.info(f"CLEAR: Cleared all problems from cloud storage")
+                        
+                        # Also clear local file
+                        local_path = os.path.abspath(PROBLEM_PATH)
+                        _save_json(local_path, [])
+                        logger.info(f"CLEAR: Cleared local file: {local_path}")
+                        
+                        await interaction.response.edit_message(
+                            content=f"✅ 已成功删除 {len(cloud_problems)} 个问题报告\nSuccessfully deleted {len(cloud_problems)} problem reports",
+                            view=None
+                        )
+                        
+                    except Exception as e:
+                        logger.error(f"CLEAR: Error clearing problems: {e}")
+                        await interaction.response.edit_message(
+                            content=f"❌ 删除失败: {e}\nDelete failed: {e}",
+                            view=None
+                        )
+                
+                @discord.ui.button(label="取消 Cancel", style=discord.ButtonStyle.secondary, emoji="❌")
+                async def cancel_delete(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    if interaction.user.id != 1073555366803165245:
+                        return await interaction.response.send_message("❌只有管理员可以操作 Only admin can operate", ephemeral=True)
+                    
+                    await interaction.response.edit_message(
+                        content="🚫 已取消删除操作\nDelete operation cancelled",
+                        view=None
+                    )
+            
+            view = ConfirmClearView()
+            await ctx.reply(
+                f"⚠️ **危险操作 Dangerous Operation**\n\n"
+                f"即将删除 {len(cloud_problems)} 个问题报告\n"
+                f"About to delete {len(cloud_problems)} problem reports\n\n"
+                f"此操作不可恢复，请确认！\n"
+                f"This action cannot be undone, please confirm!",
+                view=view,
+                mention_author=False
+            )
+            
+        except Exception as e:
+            logger.error(f"CLEAR: Error in clear_problems: {e}")
+            import traceback
+            logger.error(f"CLEAR: Full traceback: {traceback.format_exc()}")
+            await ctx.reply(f"❌ 操作失败: {e}\nOperation failed: {e}", mention_author=False)
+    
     @bot.command(name="debug_cloud")
     async def debug_cloud(ctx):
-        if not _is_whitelist_user(config, ctx.guild.id, ctx.author.id):
-            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+        # Only allow the specific user (joyzhang14) to use this command
+        if ctx.author.id != 1073555366803165245:
+            return await ctx.reply("❌此命令仅限特定用户使用 This command is restricted", mention_author=False)
         
         try:
             # Test cloud storage connection
