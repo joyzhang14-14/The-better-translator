@@ -1263,10 +1263,24 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
     )
     
     async def on_submit(self, interaction: discord.Interaction):
-        # Save problem report to problem.json
+        # Save problem report to problem.json with enhanced debugging
         try:
+            logger.info(f"=== PROBLEM REPORT DEBUG START ===")
             logger.info(f"Starting to save problem report from user {interaction.user.display_name}")
             logger.info(f"PROBLEM_PATH: {PROBLEM_PATH}")
+            logger.info(f"Current working directory: {os.getcwd()}")
+            logger.info(f"PROBLEM_PATH exists: {os.path.exists(PROBLEM_PATH)}")
+            logger.info(f"PROBLEM_PATH is file: {os.path.isfile(PROBLEM_PATH)}")
+            logger.info(f"Directory of PROBLEM_PATH: {os.path.dirname(PROBLEM_PATH)}")
+            logger.info(f"Directory exists: {os.path.exists(os.path.dirname(PROBLEM_PATH))}")
+            
+            # Check file permissions
+            try:
+                with open(PROBLEM_PATH, 'a') as test_file:
+                    pass
+                logger.info(f"File is writable: True")
+            except Exception as perm_error:
+                logger.error(f"File permission error: {perm_error}")
             
             # Load existing problems
             problems = _load_json_or(PROBLEM_PATH, [])
@@ -1285,14 +1299,36 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
             
             # Save to local file with enhanced error handling
             logger.info(f"Attempting to save {len(problems)} problems to {PROBLEM_PATH}")
-            _save_json(PROBLEM_PATH, problems)
+            
+            # FORCE ABSOLUTE PATH to ensure we're writing to the right place
+            abs_path = os.path.abspath(PROBLEM_PATH)
+            logger.info(f"Using absolute path: {abs_path}")
+            
+            _save_json(abs_path, problems)
             
             # Verify the save by reading back
-            saved_problems = _load_json_or(PROBLEM_PATH, [])
+            saved_problems = _load_json_or(abs_path, [])
             logger.info(f"Verification: file now contains {len(saved_problems)} problems")
+            
+            # Additional verification - check file size
+            if os.path.exists(abs_path):
+                file_size = os.path.getsize(abs_path)
+                logger.info(f"Final file size: {file_size} bytes")
+                
+                # Read and log actual file content
+                try:
+                    with open(abs_path, 'r', encoding='utf-8') as f:
+                        actual_content = f.read()
+                        logger.info(f"Actual file content length: {len(actual_content)}")
+                        logger.info(f"Actual file content preview: {actual_content[:200]}")
+                except Exception as read_error:
+                    logger.error(f"Error reading back file: {read_error}")
+            else:
+                logger.error(f"File does not exist after save attempt!")
             
             await interaction.response.send_message("✅已成功提交 submitted", ephemeral=True)
             logger.info(f"Problem report successfully processed: {problem_entry}")
+            logger.info(f"=== PROBLEM REPORT DEBUG END ===")
             
             # Delete the original bot message to clean up interface
             if self.original_message:
@@ -1303,10 +1339,13 @@ class ProblemReportModal(discord.ui.Modal, title="问题报告 Problem Report"):
                     logger.warning(f"Failed to delete original message: {delete_error}")
             
         except Exception as e:
+            logger.error(f"=== PROBLEM REPORT ERROR ===")
             logger.error(f"Failed to save problem report: {e}")
             logger.error(f"Error type: {type(e)}")
             import traceback
             logger.error(f"Full traceback: {traceback.format_exc()}")
+            logger.error(f"Current working directory at error: {os.getcwd()}")
+            logger.error(f"=== END ERROR ===")
             await interaction.response.send_message("❌保存失败 save failed", ephemeral=True)
 
 class MandatorySelectionView(discord.ui.View):
