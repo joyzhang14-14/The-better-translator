@@ -1,5 +1,19 @@
 # Discord Translator Bot - Changelog
 
+## v2.3.2 - Private Main Menu (2025-08-20)
+
+### 🔒 Privacy Enhancement
+- **Private Main Menu**: Main menu (!bot14) is now only visible to the command caller (ephemeral)
+- **Improved User Experience**: Other users can no longer see the main menu interface, reducing channel clutter
+- **Enhanced Privacy**: Bot interactions are now private by default for better user experience
+
+### 🔧 Technical Changes
+- **Ephemeral Response**: Changed from `ctx.reply()` to `ctx.send()` with `ephemeral=True`
+- **Message Visibility**: Main menu commands now use Discord's ephemeral message system
+- **UI Cleanup**: Removed `mention_author=False` parameter as it's not needed with ephemeral messages
+
+---
+
 ## v2.3.1 - Main Menu UX Optimization (2025-08-20)
 
 ### 🎨 User Experience Improvements
@@ -257,4 +271,4 @@
 - **Major.Minor.Patch** format (e.g., 2.3.0)
 - **Minor version (+1)** for major feature additions
 - **Patch version (+1)** for bug fixes and small improvements
-- Current: **v2.3.1** (Main Menu UX Optimization)
+- Current: **v2.3.2** (Private Main Menu)
