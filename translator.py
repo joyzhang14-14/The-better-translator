@@ -31,7 +31,7 @@ class Translator:
         self.deepl_client = deepl_client
         self.gpt_handler = gpt_handler
 
-    async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
+    async def _call_translate(self, src_text: str, src_lang: str, tgt_lang: str, fallback_to_simple: bool = False) -> str:
         if not src_text:
             return "/"
         
@@ -51,7 +51,7 @@ class Translator:
                 logger.error(f"Unsupported target language: {tgt_lang}")
                 return "/"
             
-            logger.info(f"DEEPL_DEBUG: Calling DeepL API")
+            logger.info(f"DEEPL_DEBUG: Calling DeepL API (fallback_mode: {fallback_to_simple})")
             logger.info(f"DEEPL_DEBUG: Input text: {repr(src_text)}")
             logger.info(f"DEEPL_DEBUG: Source lang: {source_lang}, Target lang: {target_lang}")
             
@@ -66,11 +66,16 @@ class Translator:
             
             logger.info(f"DEEPL_DEBUG: Final output: {repr(out)}")
             
+            # Check if result is empty or just whitespace
+            if not out or out.isspace():
+                logger.warning(f"DEEPL_DEBUG: Empty or whitespace result detected: {repr(out)}")
+                return "/"
+            
             # Check for potential truncation and retry with sentence splitting if detected
-            if self._detect_potential_truncation(src_text, out, src_lang):
+            if not fallback_to_simple and self._detect_potential_truncation(src_text, out, src_lang):
                 logger.warning(f"DEEPL_DEBUG: Detected potential truncation, trying sentence splitting")
                 retry_result = await self._retry_with_sentence_splitting(src_text, source_lang, target_lang)
-                if retry_result and retry_result != "/":
+                if retry_result and retry_result != "/" and retry_result.strip():
                     logger.info(f"DEEPL_DEBUG: Sentence splitting result: {repr(retry_result)}")
                     return retry_result
                 else:
@@ -80,6 +85,13 @@ class Translator:
         except Exception as e:
             logger.error(f"DeepL translation failed: {e}")
             return "/"
+
+    async def _call_translate_simple(self, src_text: str, src_lang: str, tgt_lang: str) -> str:
+        """Simple translation without context - used as fallback when context translation returns empty"""
+        logger.info(f"FALLBACK_DEBUG: Calling simple translation without context")
+        logger.info(f"FALLBACK_DEBUG: Input: {repr(src_text)}")
+        
+        return await self._call_translate(src_text, src_lang, tgt_lang, fallback_to_simple=True)
 
     def _apply_dictionary(self, text: str, direction: str, custom_map: dict) -> str:
         s = text or ""
@@ -260,17 +272,32 @@ class Translator:
             combined_text = f"{context_processed}\n{text_processed}"
             translated_combined = await self._call_translate(combined_text, src_lang, tgt_lang)
             
-            if translated_combined == "/":
-                fallback_result = await self._call_translate(text_processed, src_lang, tgt_lang)
+            # Check if translation failed or returned empty
+            if translated_combined == "/" or not translated_combined.strip():
+                logger.warning(f"CONTEXT_DEBUG: Combined translation failed or empty, trying simple fallback")
+                fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
                 return restore_emojis(fallback_result, extracted_emojis)
             
             lines = translated_combined.split('\n')
             if len(lines) >= 2:
                 reply_lines = lines[1:]
                 reply_translation = '\n'.join(reply_lines).strip()
-                result = reply_translation if reply_translation else translated_combined
+                
+                # Check if extracted result is empty or just whitespace
+                if not reply_translation or reply_translation.isspace():
+                    logger.warning(f"CONTEXT_DEBUG: Extracted reply is empty, trying simple fallback")
+                    fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
+                    return restore_emojis(fallback_result, extracted_emojis)
+                
+                result = reply_translation
                 return restore_emojis(result, extracted_emojis)
             else:
+                # If we can't split properly, check if result is meaningful
+                if not translated_combined.strip() or translated_combined.strip() == "/":
+                    logger.warning(f"CONTEXT_DEBUG: Single line result is empty, trying simple fallback")
+                    fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
+                    return restore_emojis(fallback_result, extracted_emojis)
+                
                 return restore_emojis(translated_combined, extracted_emojis)
                 
         except Exception as e:
@@ -343,9 +370,10 @@ class Translator:
             # Translate the combined text
             translated_combined = await self._call_translate(combined_text, src_lang, tgt_lang)
             
-            if translated_combined == "/":
-                # Fallback: translate current message only
-                fallback_result = await self._call_translate(text_processed, src_lang, tgt_lang)
+            # Check if translation failed or returned empty
+            if translated_combined == "/" or not translated_combined.strip():
+                logger.warning(f"HISTORY_DEBUG: Combined translation failed or empty, trying simple fallback")
+                fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
                 return restore_emojis(fallback_result, extracted_emojis)
             
             # Extract the current message translation (last line)
@@ -353,10 +381,22 @@ class Translator:
             if len(lines) >= len(all_messages):
                 # Get the line corresponding to the current message (last line)
                 current_message_translation = lines[-1].strip()
-                result = current_message_translation if current_message_translation else translated_combined
+                
+                # Check if extracted result is empty or just whitespace
+                if not current_message_translation or current_message_translation.isspace():
+                    logger.warning(f"HISTORY_DEBUG: Extracted current message translation is empty, trying simple fallback")
+                    fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
+                    return restore_emojis(fallback_result, extracted_emojis)
+                
+                result = current_message_translation
                 return restore_emojis(result, extracted_emojis)
             else:
-                # If splitting failed, return the whole translation
+                # If splitting failed, check if whole result is meaningful
+                if not translated_combined.strip() or translated_combined.strip() == "/":
+                    logger.warning(f"HISTORY_DEBUG: Whole result is empty, trying simple fallback")
+                    fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
+                    return restore_emojis(fallback_result, extracted_emojis)
+                
                 return restore_emojis(translated_combined, extracted_emojis)
                 
         except Exception as e:
