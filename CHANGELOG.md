@@ -1,5 +1,27 @@
 # Discord Translator Bot - Changelog
 
+## v2.3.1 - Main Menu UX Optimization (2025-08-20)
+
+### 🎨 User Experience Improvements
+- **Main Menu Persistence**: Main menu (!bot14) now stays visible for 10 minutes instead of being deleted by sub-menu operations
+- **Independent Timeout**: Main menu has its own 10-minute auto-delete timer, separate from sub-menu interactions
+- **Smart Message Management**: Sub-menus only clean up their own popup messages, preserving main navigation
+- **Consistent Navigation**: Users can return to main menu options while browsing sub-menus
+
+### 🔧 Technical Enhancements
+- **New Cleanup Function**: Added `_cleanup_popup_only()` to preserve main menu during navigation
+- **Timeout Optimization**: Reduced ErrorSelectionView timeout from 10 hours to 10 minutes
+- **Auto-Delete Mechanism**: Enhanced `on_timeout()` with automatic message deletion and cleanup
+- **Message Reference Tracking**: Improved message lifecycle management for better resource usage
+
+### 🛠 Message Management Flow
+1. **Main Menu Creation**: `!bot14` clears all old messages and creates new main menu (10-min timer)
+2. **Sub-Menu Navigation**: Button clicks preserve main menu, only clear previous popup messages  
+3. **Auto Cleanup**: Main menu automatically deletes after 10 minutes of inactivity
+4. **Reset Behavior**: New `!bot14` command properly cleans up previous main menu
+
+---
+
 ## v2.3.0 - Problem Report Management System (2025-08-20)
 
 ### 🆕 New Features
@@ -235,4 +257,4 @@
 - **Major.Minor.Patch** format (e.g., 2.3.0)
 - **Minor version (+1)** for major feature additions
 - **Patch version (+1)** for bug fixes and small improvements
-- Current: **v2.3.0** (Problem Report Management System)
+- Current: **v2.3.1** (Main Menu UX Optimization)
