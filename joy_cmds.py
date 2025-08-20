@@ -1609,11 +1609,11 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         is_owner = ctx.guild.owner_id == ctx.author.id
         
         # Create and send the error selection view with permission check
-        # VERSION: v2.2.4 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.3.0 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
         view = ErrorSelectionView(str(ctx.guild.id), ctx.author.id, is_owner)
         message = await ctx.reply(
-            "v2.2.4 请选择操作类型 Please select operation type:",
+            "v2.3.0 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
