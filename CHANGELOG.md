@@ -1,5 +1,19 @@
 # Discord Translator Bot - Changelog
 
+## v2.3.5 - Clean Main Menu (2025-08-20)
+
+### 🧹 UI Cleanup
+- **Removed Tip Message**: Removed the `/bot14` tip from `!bot14` text command response
+- **Cleaner Interface**: Main menu message is now shorter and cleaner
+- **Focus on Functionality**: Since `/bot14` slash command isn't working reliably, focus on the working `!bot14`
+
+### 📋 Technical Changes
+- **Version Update**: Updated to v2.3.5 in both command implementations
+- **Message Cleanup**: Removed the guidance text about using slash command
+- **Simplified Output**: Both commands now show the same clean menu format
+
+---
+
 ## v2.3.4 - Dual Command Support (2025-08-20)
 
 ### 🔧 Reliability Fix
@@ -314,4 +328,4 @@
 - **Major.Minor.Patch** format (e.g., 2.3.0)
 - **Minor version (+1)** for major feature additions
 - **Patch version (+1)** for bug fixes and small improvements
-- Current: **v2.3.4** (Dual Command Support)
+- Current: **v2.3.5** (Clean Main Menu)
