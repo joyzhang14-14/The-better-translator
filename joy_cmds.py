@@ -1627,35 +1627,38 @@ class TargetTextModal(discord.ui.Modal, title="输入替换文字 Input Replacem
         glossary_handler._save_local_glossaries()
 
 def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, guild_abbrs, abbr_path, can_use):
-    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!bot14", "!sync_problems", "!download_problems", "!clear_problems", "!debug_cloud"]
+    mgmt_cmds = ["!setrequire", "!allowuser", "!denyuser", "!allowrole", "!denyrole", "!sync_problems", "!download_problems", "!clear_problems", "!debug_cloud"]
     _ensure_pt_commands(mgmt_cmds)
 
-    @bot.command(name="bot14")
-    async def bot14_command(ctx):
-        if not can_use(ctx.guild, ctx.author):
-            return await ctx.reply("❌需要权限 Need permission", mention_author=False)
+    @bot.tree.command(name="bot14", description="打开翻译机器人主菜单 Open translator bot main menu")
+    async def bot14_command(interaction: discord.Interaction):
+        if not can_use(interaction.guild, interaction.user):
+            return await interaction.response.send_message("❌需要权限 Need permission", ephemeral=True)
         
         # Clean up old popups before showing main selection
-        await _cleanup_old_popups(ctx.author.id)
+        await _cleanup_old_popups(interaction.user.id)
         
         # Check if user is server owner
-        is_owner = ctx.guild.owner_id == ctx.author.id
+        is_owner = interaction.guild.owner_id == interaction.user.id
         
         # Create and send the error selection view with permission check
-        # VERSION: v2.3.2 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
+        # VERSION: v2.3.3 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
-        view = ErrorSelectionView(str(ctx.guild.id), ctx.author.id, is_owner)
-        message = await ctx.send(
-            "v2.3.2 请选择操作类型 Please select operation type:",
+        view = ErrorSelectionView(str(interaction.guild.id), interaction.user.id, is_owner)
+        await interaction.response.send_message(
+            "v2.3.3 请选择操作类型 Please select operation type:",
             view=view,
             ephemeral=True
         )
+        
+        # Get the message for tracking and auto-deletion
+        message = await interaction.original_response()
         
         # Set the message reference for auto-deletion
         view.message = message
         
         # Track this main selection message (it will be preserved during cleanup)
-        _track_popup_message(ctx.author.id, message)
+        _track_popup_message(interaction.user.id, message)
 
     @bot.command(name="setrequire")
     async def setrequire(ctx, mode: str):

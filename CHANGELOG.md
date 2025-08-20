@@ -1,5 +1,26 @@
 # Discord Translator Bot - Changelog
 
+## v2.3.3 - Fixed Private Main Menu (2025-08-20)
+
+### 🔧 Critical Bug Fix
+- **Real Private Main Menu**: Converted `!bot14` from text command to slash command (`/bot14`)
+- **True Ephemeral Support**: Main menu is now actually hidden from other users (previous fix didn't work)
+- **Improved Architecture**: Slash commands provide better Discord integration and privacy
+
+### 📋 Technical Changes
+- **Command Type**: Changed from `@bot.command` to `@bot.tree.command`
+- **Parameter Updates**: Changed `ctx` to `interaction: discord.Interaction`
+- **Response Method**: Now uses `interaction.response.send_message(..., ephemeral=True)`
+- **Message Tracking**: Updated tracking to work with interaction responses
+- **Passthrough Commands**: Removed `/bot14` from text command passthrough list
+
+### ⚠️ Breaking Change
+- **Command Usage**: Users now need to use `/bot14` (slash command) instead of `!bot14` (text command)
+- **Auto-complete**: Discord will show the command in the auto-complete menu
+- **Better UX**: Slash command provides better user experience with descriptions
+
+---
+
 ## v2.3.2 - Private Main Menu (2025-08-20)
 
 ### 🔒 Privacy Enhancement
@@ -271,4 +292,4 @@
 - **Major.Minor.Patch** format (e.g., 2.3.0)
 - **Minor version (+1)** for major feature additions
 - **Patch version (+1)** for bug fixes and small improvements
-- Current: **v2.3.2** (Private Main Menu)
+- Current: **v2.3.3** (Fixed Private Main Menu)
