@@ -71,7 +71,7 @@ def _is_whitelist_user(config, guild_id: int, user_id: int) -> bool:
     return user_id in set(a.get("allowed_user_ids", []))
 
 async def _cleanup_old_popups(user_id: int):
-    """Clean up the most recent popup message for immediate deletion"""
+    """Clean up ALL popup messages for immediate deletion"""
     if user_id not in user_popup_messages:
         return
     
@@ -89,6 +89,19 @@ async def _cleanup_old_popups(user_id: int):
             # Remove the reference even if deletion failed
             if "last_popup" in user_messages:
                 del user_messages["last_popup"]
+    
+    # Also delete the main message if it exists (for complete cleanup)
+    if "main_message" in user_messages:
+        try:
+            main_message = user_messages["main_message"]
+            await main_message.delete()
+            logger.info(f"Deleted main message for user {user_id}: {main_message.content[:50] if main_message.content else 'No content'}...")
+            del user_messages["main_message"]
+        except Exception as e:
+            logger.warning(f"Failed to delete main message: {e}")
+            # Remove the reference even if deletion failed
+            if "main_message" in user_messages:
+                del user_messages["main_message"]
 
 def _track_popup_message(user_id: int, message: discord.Message):
     """Track a popup message for later cleanup"""
@@ -1267,6 +1280,9 @@ class MandatorySelectionView(discord.ui.View):
         await self._handle_selection(interaction, True)  # true = optional (needs GPT)
     
     async def _handle_selection(self, interaction: discord.Interaction, needs_gpt: bool):
+        # Clean up old popups before showing new one
+        await _cleanup_old_popups(interaction.user.id)
+        
         if self.session_id not in pending_glossary_sessions:
             await interaction.response.send_message("❌会话已过期 Session expired", ephemeral=True)
             return
@@ -1309,6 +1325,9 @@ class SourceLanguageSelectionView(discord.ui.View):
         await self._handle_selection(interaction, "英文")
     
     async def _handle_selection(self, interaction: discord.Interaction, language: str):
+        # Clean up old popups before showing modal
+        await _cleanup_old_popups(interaction.user.id)
+        
         if self.session_id not in pending_glossary_sessions:
             await interaction.response.send_message("❌会话已过期 Session expired", ephemeral=True)
             return
@@ -1378,6 +1397,9 @@ class TargetLanguageSelectionView(discord.ui.View):
         await self._handle_selection(interaction, "英文")
     
     async def _handle_selection(self, interaction: discord.Interaction, language: str):
+        # Clean up old popups before showing modal
+        await _cleanup_old_popups(interaction.user.id)
+        
         if self.session_id not in pending_glossary_sessions:
             await interaction.response.send_message("❌会话已过期 Session expired", ephemeral=True)
             return

@@ -269,42 +269,12 @@ class TranslatorBot(commands.Bot):
         # Load glossaries from cloud
         await glossary_handler.load_from_cloud()
         
-        # Load problem reports from cloud and sync to local file
-        await self._load_problem_reports()
+        # Problem reports are now stored locally only (no cloud sync needed)
         
         logger.info(f"Loaded {len(guild_dicts)} guilds in dictionary")
         
         self._mirror_load()
     
-    async def _load_problem_reports(self):
-        """Load problem reports from cloud and sync to local file"""
-        try:
-            # Use the same path as joy_cmds.py for consistency
-            PROBLEM_PATH = os.path.abspath(os.path.join(BASE, "problem.json"))
-            logger.info(f"Loading problem reports to path: {PROBLEM_PATH}")
-            
-            cloud_problems = await storage.load_json("problems", [])
-            if cloud_problems:
-                # Ensure directory exists
-                os.makedirs(os.path.dirname(PROBLEM_PATH), exist_ok=True)
-                
-                # Save to local file
-                with open(PROBLEM_PATH, "w", encoding="utf-8") as f:
-                    json.dump(cloud_problems, f, ensure_ascii=False, indent=2)
-                logger.info(f"Loaded {len(cloud_problems)} problem reports from cloud and saved to {PROBLEM_PATH}")
-                
-                # Verify the file was created
-                if os.path.exists(PROBLEM_PATH):
-                    file_size = os.path.getsize(PROBLEM_PATH)
-                    logger.info(f"Problem report file created successfully: {PROBLEM_PATH} ({file_size} bytes)")
-                else:
-                    logger.error(f"Problem report file was not created: {PROBLEM_PATH}")
-            else:
-                logger.info("No problem reports found in cloud storage")
-        except Exception as e:
-            logger.error(f"Failed to load problem reports from cloud: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
         self.session = aiohttp.ClientSession()
         # Start health check server
         self.health_runner = await health_server.start_health_server()
