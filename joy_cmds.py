@@ -827,11 +827,56 @@ class GlossaryMenuView(discord.ui.View):
             item.disabled = True
 
 class ErrorSelectionView(discord.ui.View):
-    def __init__(self, *, timeout=36000):  # 10 hours timeout
+    def __init__(self, guild_id: str, user_id: int, is_owner: bool, *, timeout=36000):  # 10 hours timeout
         super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.is_owner = is_owner
+        
+        # Check if user is whitelisted
+        config = _load_json_or(CONFIG_PATH, {})
+        self.is_whitelisted = _is_whitelist_user(config, int(guild_id), user_id)
+        self.has_admin_access = is_owner or self.is_whitelisted
+        
+        # Add buttons dynamically based on permissions
+        self._add_buttons()
     
-    @discord.ui.button(label="1. 报告翻译逻辑错误 report bot logical bug", style=discord.ButtonStyle.red)
-    async def report_bug(self, interaction: discord.Interaction, button: discord.ui.Button):
+    def _add_buttons(self):
+        # Button 1: Always visible - Report bug
+        report_button = discord.ui.Button(
+            label="1. 报告翻译逻辑错误 report bot logical bug",
+            style=discord.ButtonStyle.red
+        )
+        report_button.callback = self.report_bug
+        self.add_item(report_button)
+        
+        # Button 2: Always visible - Glossary
+        glossary_button = discord.ui.Button(
+            label="2. 术语表 Glossary",
+            style=discord.ButtonStyle.blurple
+        )
+        glossary_button.callback = self.glossary_menu
+        self.add_item(glossary_button)
+        
+        # Button 3: Admin only - Term Detection Settings
+        if self.has_admin_access:
+            term_detection_button = discord.ui.Button(
+                label="3. 术语检测设置 Term Detection Settings",
+                style=discord.ButtonStyle.secondary
+            )
+            term_detection_button.callback = self.toggle_term_detection
+            self.add_item(term_detection_button)
+        
+        # Button 4: Admin only - Permission Settings
+        if self.has_admin_access:
+            permission_button = discord.ui.Button(
+                label="4. 权限设置 Permission Settings",
+                style=discord.ButtonStyle.danger
+            )
+            permission_button.callback = self.permission_settings
+            self.add_item(permission_button)
+    
+    async def report_bug(self, interaction: discord.Interaction):
         # Clean up old popups before showing modal
         await _cleanup_old_popups(interaction.user.id)
         
@@ -839,8 +884,7 @@ class ErrorSelectionView(discord.ui.View):
         modal = ProblemReportModal(None)  # Don't delete main message
         await interaction.response.send_modal(modal)
     
-    @discord.ui.button(label="2. 术语表 Glossary", style=discord.ButtonStyle.blurple)
-    async def glossary_menu(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def glossary_menu(self, interaction: discord.Interaction):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
         
@@ -860,22 +904,20 @@ class ErrorSelectionView(discord.ui.View):
         except Exception as e:
             logger.warning(f"Failed to track popup message: {e}")
     
-    @discord.ui.button(label="3. 术语检测设置 Term Detection Settings", style=discord.ButtonStyle.secondary)
-    async def toggle_term_detection(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def toggle_term_detection(self, interaction: discord.Interaction):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
         
-        guild_id = str(interaction.guild.id)
         config = _load_json_or(CONFIG_PATH, {})
         
         # Get current term detection status (default: enabled)
-        guild_config = config.get("guilds", {}).get(guild_id, {})
+        guild_config = config.get("guilds", {}).get(self.guild_id, {})
         current_status = guild_config.get("glossary_enabled", True)
         
-        logger.info(f"TERM_DEBUG: Guild {guild_id} term detection status: {current_status}")
+        logger.info(f"TERM_DEBUG: Guild {self.guild_id} term detection status: {current_status}")
         
         # Create toggle view
-        view = GlossaryToggleView(guild_id)
+        view = GlossaryToggleView(self.guild_id)
         status_text = "启用 Enabled" if current_status else "禁用 Disabled"
         await interaction.response.send_message(
             f"**术语检测设置 Term Detection Settings**\n\n"
@@ -893,33 +935,13 @@ class ErrorSelectionView(discord.ui.View):
             _track_popup_message(interaction.user.id, response_message)
         except Exception as e:
             logger.warning(f"Failed to track popup message: {e}")
-            
     
-    @discord.ui.button(label="4. 权限设置 Permission Settings", style=discord.ButtonStyle.danger)
-    async def permission_settings(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def permission_settings(self, interaction: discord.Interaction):
         # Clean up old popups before showing new one
         await _cleanup_old_popups(interaction.user.id)
         
-        # Check if user has permission to access permission settings
-        guild_id = str(interaction.guild.id)
-        config = _load_json_or(CONFIG_PATH, {})
-        
-        # Only server owner or existing whitelist users can access permission settings
-        is_owner = interaction.guild.owner_id == interaction.user.id
-        is_whitelisted = _is_whitelist_user(config, interaction.guild.id, interaction.user.id)
-        
-        if not (is_owner or is_whitelisted):
-            await interaction.response.send_message("❌ 只有服主或白名单用户可以访问权限设置 Only server owner or whitelisted users can access permission settings", ephemeral=True)
-            # Track this popup message for cleanup
-            try:
-                response_message = await interaction.original_response()
-                _track_popup_message(interaction.user.id, response_message)
-            except Exception as e:
-                logger.warning(f"Failed to track popup message: {e}")
-            return
-        
         # Show permission management submenu
-        view = PermissionMenuView(guild_id)
+        view = PermissionMenuView(self.guild_id)
         await interaction.response.send_message(
             "**权限设置 Permission Settings**\n\n"
             "请选择操作 Please select an operation:",
@@ -1457,12 +1479,15 @@ def register_commands(bot: commands.Bot, config, guild_dicts, dictionary_path, g
         # Clean up old popups before showing main selection
         await _cleanup_old_popups(ctx.author.id)
         
-        # Create and send the error selection view
+        # Check if user is server owner
+        is_owner = ctx.guild.owner_id == ctx.author.id
+        
+        # Create and send the error selection view with permission check
         # VERSION: v2.2.2 - Update version for major feature additions (Minor +1) or bug fixes (Patch +1)
         # Format: Major.Minor.Patch (e.g., v2.1.0 for new features, v2.0.1 for bug fixes)
-        view = ErrorSelectionView()
+        view = ErrorSelectionView(str(ctx.guild.id), ctx.author.id, is_owner)
         message = await ctx.reply(
-            "v2.2.2 请选择操作类型 Please select operation type:",
+            "v2.2.3 请选择操作类型 Please select operation type:",
             view=view,
             mention_author=False
         )
