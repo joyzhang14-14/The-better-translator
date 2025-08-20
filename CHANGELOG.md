@@ -1,5 +1,26 @@
 # Discord Translator Bot - Changelog
 
+## v2.3.4 - Dual Command Support (2025-08-20)
+
+### 🔧 Reliability Fix
+- **Dual Command System**: Both `/bot14` (private) and `!bot14` (public) now work
+- **Fallback Support**: Restored `!bot14` text command as backup in case slash commands don't work
+- **User Guidance**: Text command now shows tip to use `/bot14` for private menu
+- **Better Compatibility**: Ensures functionality regardless of Discord server slash command permissions
+
+### 📋 Technical Changes
+- **Two Command Types**: Added both `@bot.tree.command` and `@bot.command` for bot14
+- **Different Behaviors**: `/bot14` is ephemeral (private), `!bot14` is public with guidance message
+- **Restored Passthrough**: Added `!bot14` back to text command passthrough list
+- **Version Update**: Updated to v2.3.4 in both command implementations
+
+### 💡 Usage Instructions
+- **Private Menu**: Use `/bot14` (only you can see it)
+- **Public Menu**: Use `!bot14` (everyone can see it, shows tip about private version)
+- **Best Practice**: Use `/bot14` when available for better privacy
+
+---
+
 ## v2.3.3 - Fixed Private Main Menu (2025-08-20)
 
 ### 🔧 Critical Bug Fix
@@ -293,4 +314,4 @@
 - **Major.Minor.Patch** format (e.g., 2.3.0)
 - **Minor version (+1)** for major feature additions
 - **Patch version (+1)** for bug fixes and small improvements
-- Current: **v2.3.3** (Fixed Private Main Menu)
+- Current: **v2.3.4** (Dual Command Support)
