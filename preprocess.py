@@ -128,18 +128,18 @@ def extract_emojis(text: str) -> Tuple[str, List[str]]:
     
     # Extract custom Discord emojis first
     custom_matches = list(CUSTOM_EMOJI_RE.finditer(text))
-    for i, match in enumerate(custom_matches):
+    for match in custom_matches:
         emoji = match.group(0)
+        placeholder = EMOJI_PLACEHOLDER.format(len(emojis))
         emojis.append(emoji)
-        placeholder = EMOJI_PLACEHOLDER.format(len(emojis) - 1)
         result = result.replace(emoji, placeholder, 1)
     
     # Extract Unicode emojis
     unicode_matches = list(UNICODE_EMOJI_RE.finditer(result))
-    for i, match in enumerate(unicode_matches):
+    for match in unicode_matches:
         emoji = match.group(0)
+        placeholder = EMOJI_PLACEHOLDER.format(len(emojis))
         emojis.append(emoji)
-        placeholder = EMOJI_PLACEHOLDER.format(len(emojis) - 1)
         result = result.replace(emoji, placeholder, 1)
     
     return result, emojis

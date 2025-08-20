@@ -269,36 +269,17 @@ class Translator:
                 src_lang = "English" 
                 tgt_lang = "Chinese (Simplified)"
             
-            combined_text = f"{context_processed}\n{text_processed}"
-            translated_combined = await self._call_translate(combined_text, src_lang, tgt_lang)
+            # Use context for better understanding but only translate the current input
+            context_prompt = f"Please translate the following text considering the context provided. Context: {context_processed}\n\nText to translate: {text_processed}"
+            translated_result = await self._call_translate(context_prompt, src_lang, tgt_lang)
             
             # Check if translation failed or returned empty
-            if translated_combined == "/" or not translated_combined.strip():
-                logger.warning(f"CONTEXT_DEBUG: Combined translation failed or empty, trying simple fallback")
+            if translated_result == "/" or not translated_result.strip():
+                logger.warning(f"CONTEXT_DEBUG: Context-aware translation failed or empty, trying simple fallback")
                 fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
                 return restore_emojis(fallback_result, extracted_emojis)
-            
-            lines = translated_combined.split('\n')
-            if len(lines) >= 2:
-                reply_lines = lines[1:]
-                reply_translation = '\n'.join(reply_lines).strip()
                 
-                # Check if extracted result is empty or just whitespace
-                if not reply_translation or reply_translation.isspace():
-                    logger.warning(f"CONTEXT_DEBUG: Extracted reply is empty, trying simple fallback")
-                    fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
-                    return restore_emojis(fallback_result, extracted_emojis)
-                
-                result = reply_translation
-                return restore_emojis(result, extracted_emojis)
-            else:
-                # If we can't split properly, check if result is meaningful
-                if not translated_combined.strip() or translated_combined.strip() == "/":
-                    logger.warning(f"CONTEXT_DEBUG: Single line result is empty, trying simple fallback")
-                    fallback_result = await self._call_translate_simple(text_processed, src_lang, tgt_lang)
-                    return restore_emojis(fallback_result, extracted_emojis)
-                
-                return restore_emojis(translated_combined, extracted_emojis)
+            return restore_emojis(translated_result, extracted_emojis)
                 
         except Exception as e:
             logger.error(f"Context translation failed: {e}")
